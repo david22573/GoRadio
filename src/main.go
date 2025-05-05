@@ -1,28 +1,14 @@
 package main
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	rc := NewRadioClient("https://kxlu.streamguys1.com/kxlu-lo")
+	rc.Record(10, "test.mp3")
+
 	e := gin.Default()
 
-	e.LoadHTMLGlob("templates/**/*")
-
-	e.GET("/", root)
-	e.GET("/home", home)
-
 	e.Run(":42069")
-}
-
-func root(c *gin.Context) {
-	data := gin.H{"Message": "Hello"}
-	c.HTML(http.StatusOK, "index.tmpl", data)
-}
-
-func home(c *gin.Context) {
-	data := gin.H{"Message": "Hello"}
-	c.HTML(http.StatusOK, "home/home.tmpl", data)
 }
