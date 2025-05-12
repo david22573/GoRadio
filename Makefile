@@ -1,5 +1,5 @@
 build:
-	@go build -o bin/GoRadio ./src/
+	@go build -o bin/GoRadio ./cmd/main.go
 
 run:
 	@bin/GoRadio
