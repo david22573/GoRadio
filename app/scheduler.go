@@ -5,32 +5,45 @@ import (
 	"log"
 	"time"
 
+	"github.com/david22573/GoRadio/app/types"
 	"github.com/go-co-op/gocron/v2"
 )
 
+const (
+	rootFolder      = "recordings"
+	defaultTimeZone = "America/Los_Angeles"
+)
+
+type Scheduler interface {
+	Schedule()
+	Start()
+	Shutdown()
+}
+
 // RadioScheduler holds the Scheduler interface and the client.
 type RadioScheduler struct {
-	scheduler gocron.Scheduler // interface returned by NewScheduler() :contentReference[oaicite:0]{index=0}
-	rc        *RadioClient
+	radioClient *RadioClient
+	scheduler   gocron.Scheduler
+	schedules   []types.Show
 }
 
 // NewRadioScheduler creates a new Scheduler configured with the local timezone.
-func NewRadioScheduler(rootFolder, radioURL string) *RadioScheduler {
+func NewRadioScheduler(station, radioURL string) *RadioScheduler {
+	tz, _ := time.LoadLocation(defaultTimeZone)
 	s, err := gocron.NewScheduler(
-		gocron.WithLocation(time.Local),
+		gocron.WithLocation(tz),
 	)
 	if err != nil {
 		log.Fatalf("failed to create scheduler: %v", err)
 	}
-
 	return &RadioScheduler{
-		scheduler: s,
-		rc:        NewRadioClient(rootFolder, radioURL),
+		scheduler:   s,
+		radioClient: NewRadioClient(rootFolder, radioURL),
 	}
 }
 
 // AddShows schedules each Show to record weekly using NewJob.
-func (rs *RadioScheduler) AddShows(shows ...Show) {
+func (rs *RadioScheduler) Schedule(shows ...types.Show) {
 	for _, show := range shows {
 		hhmm := fmt.Sprintf("%02d:%02d", show.Hour, show.Min)
 
@@ -43,7 +56,7 @@ func (rs *RadioScheduler) AddShows(shows ...Show) {
 				),
 			),
 			gocron.NewTask(
-				rs.rc.Record, show,
+				rs.radioClient.Record, show,
 			),
 		)
 		if err != nil {

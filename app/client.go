@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/david22573/GoRadio/app/types"
 )
 
 type RadioClient struct {
@@ -29,7 +31,7 @@ func NewRadioClient(rootFolder, radioURL string) *RadioClient {
 }
 
 // Record uses ffmpeg to record the stream for show.Duration.
-func (rc *RadioClient) Record(show Show) error {
+func (rc *RadioClient) Record(show *types.Show) error {
 	// timestamped filename
 	ts := time.Now().Format("2006-01-02")
 	filename := fmt.Sprintf("%s_%s.aac", show.Name, ts)
