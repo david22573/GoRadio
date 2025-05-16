@@ -17,7 +17,8 @@ type App struct {
 }
 
 func NewApp() *App {
-	sqliteRepo, _ := sqlite.NewSQLiteRepo("./radio.db")
+	ensureDataFolder()
+	sqliteRepo, _ := sqlite.NewSQLiteRepo("data/radio.db")
 	scheduler := NewRadioScheduler("KXLU", "https://stream.kxlu-fm.com/kxlu")
 	return &App{schedulers: []*RadioScheduler{scheduler}, repo: sqliteRepo}
 }
@@ -30,4 +31,10 @@ func (app *App) Run() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	<-sigCh
+}
+
+func ensureDataFolder() {
+	if err := os.MkdirAll("data", os.ModePerm); err != nil {
+		log.Fatalf("failed to create data folder: %v", err)
+	}
 }
