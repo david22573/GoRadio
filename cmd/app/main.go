@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/david22573/GoRadio/app"
+	sqlite "github.com/david22573/GoRadio/app/store/repos/sqilte"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -15,6 +16,10 @@ func main() {
 		MaxAge:     28,   //days
 		Compress:   true, // disabled by default
 	})
-	app := app.NewApp()
+	sqliteRepo, err := sqlite.NewSQLiteRepo("data/radio.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	app := app.NewApp(sqliteRepo)
 	app.Run()
 }

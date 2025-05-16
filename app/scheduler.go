@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"log"
+	"path/filepath"
 	"time"
 
 	"github.com/david22573/GoRadio/app/types"
@@ -10,7 +11,6 @@ import (
 )
 
 const (
-	rootFolder      = "recordings"
 	defaultTimeZone = "America/Los_Angeles"
 )
 
@@ -28,7 +28,7 @@ type RadioScheduler struct {
 }
 
 // NewRadioScheduler creates a new Scheduler configured with the local timezone.
-func NewRadioScheduler(station, radioURL string) *RadioScheduler {
+func NewRadioScheduler(station *types.Station) *RadioScheduler {
 	tz, _ := time.LoadLocation(defaultTimeZone)
 	s, err := gocron.NewScheduler(
 		gocron.WithLocation(tz),
@@ -36,9 +36,11 @@ func NewRadioScheduler(station, radioURL string) *RadioScheduler {
 	if err != nil {
 		log.Fatalf("failed to create scheduler: %v", err)
 	}
+	cleanStationName := filepath.Clean(station.Name)
+	rootFolder := filepath.Join("recordings", cleanStationName)
 	return &RadioScheduler{
 		scheduler:   s,
-		radioClient: NewRadioClient(rootFolder, radioURL),
+		radioClient: NewRadioClient(rootFolder, station.URL),
 	}
 }
 

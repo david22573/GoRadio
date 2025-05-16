@@ -8,7 +8,6 @@ import (
 
 	"github.com/david22573/GoRadio/app/api"
 	"github.com/david22573/GoRadio/app/store"
-	sqlite "github.com/david22573/GoRadio/app/store/repos/sqilte"
 )
 
 type App struct {
@@ -16,21 +15,42 @@ type App struct {
 	schedulers []*RadioScheduler
 }
 
-func NewApp() *App {
+func NewApp(repo store.RadioRepository) *App {
 	ensureDataFolder()
-	sqliteRepo, _ := sqlite.NewSQLiteRepo("data/radio.db")
-	scheduler := NewRadioScheduler("KXLU", "https://stream.kxlu-fm.com/kxlu")
-	return &App{schedulers: []*RadioScheduler{scheduler}, repo: sqliteRepo}
+	app := &App{repo: repo}
+	app.RegisterSchedulers()
+	return app
 }
 
 func (app *App) Run() {
 	router := api.NewRouter()
+	api.RegisterHandlers(router)
+	for _, scheduler := range app.schedulers {
+		scheduler.Start()
+	}
 	log.Default().Fatal(router.Run(":8080"))
+}
 
+func (app *App) RegisterSchedulers() {
+	stations, err := app.repo.GetAllStations()
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, station := range stations {
+		scheduler := NewRadioScheduler(&station)
+		app.schedulers = append(app.schedulers, scheduler)
+	}
+}
+
+func (app *App) Shutdown() {
+	for _, scheduler := range app.schedulers {
+		scheduler.Shutdown()
+	}
 	// Clean shutdown on SIGINT/SIGTERM
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	<-sigCh
+	log.Println("graceful shutdown")
 }
 
 func ensureDataFolder() {
