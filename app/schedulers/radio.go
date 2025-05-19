@@ -1,4 +1,4 @@
-package scheduler
+package schedulers
 
 import (
 	"fmt"
@@ -42,15 +42,3 @@ func NewRadioScheduler(app *app.App, name, url string, loc *time.Location) (*Rad
 	}, nil
 }
 
-func (s *RadioScheduler) ScheduleShow(show types.Show) {
-	s.Shows = append(s.Shows, show)
-}
-
-func (s *RadioScheduler) Start() {
-	for _, show := range s.Shows {
-		s.ScheduleJob(show, func() {
-			s.app.Radio.Record(&show)
-		})
-	}
-}
-v

@@ -2,6 +2,8 @@ package sqlite
 
 import (
 	"database/sql"
+	"fmt"
+	"os"
 
 	_ "modernc.org/sqlite"
 
@@ -13,7 +15,9 @@ type sqliteRepo struct {
 }
 
 // NewSQLiteRepo opens (and migrates) the database and returns a RadioRepository.
-func NewSQLiteRepo(dsn string) (store.RadioRepository, error) {
+func NewSQLiteRepo(filename string) (store.RadioRepository, error) {
+	_ = os.MkdirAll("data", os.ModePerm)
+	dsn := fmt.Sprintf("data/%s", filename)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
