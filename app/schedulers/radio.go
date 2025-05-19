@@ -19,7 +19,11 @@ type RadioScheduler struct {
 	gocron.Scheduler
 }
 
-func NewRadioScheduler(app *app.App, name, url string, loc *time.Location) (*RadioScheduler, error) {
+func NewRadioScheduler(app *app.App, station types.Station, loc *time.Location) (gocron.Scheduler, error) {
+	shows, err := app.Repo.GetAllShowsByStation(station.ID)
+	if err != nil {
+		return nil, err
+	}
 	if loc == nil {
 		var err error
 		loc, err = time.LoadLocation("America/Los_Angeles")
@@ -32,9 +36,9 @@ func NewRadioScheduler(app *app.App, name, url string, loc *time.Location) (*Rad
 		return nil, fmt.Errorf("failed to create scheduler: %w", err)
 	}
 	return &RadioScheduler{
-		Name:  name,
-		URL:   url,
-		Shows: []types.Show{},
+		Name:  station.Name,
+		URL:   station.URL,
+		Shows: shows,
 
 		app: app,
 
@@ -42,3 +46,15 @@ func NewRadioScheduler(app *app.App, name, url string, loc *time.Location) (*Rad
 	}, nil
 }
 
+func (s *RadioScheduler) scheduleShows() error {
+	for _, show := range s.Shows {
+		if err := s.ScheduleShow(show); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *RadioScheduler) ScheduleShow(show types.Show) error {
+	return nil
+}

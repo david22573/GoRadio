@@ -17,7 +17,6 @@ type RadioRepository interface {
 	CreateStation(station *types.Station) error
 	UpdateStation(station *types.Station) error
 	DeleteStation(id int) error
-	// TODO: Consider adding UpdateStation and DeleteStation if needed for full CRUD on stations
 
 	GetAllShows() ([]types.Show, error)
 	GetAllShowsByStation(stationID int) ([]types.Show, error)

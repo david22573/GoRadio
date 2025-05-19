@@ -12,13 +12,13 @@ import (
 )
 
 type App struct {
-	repo       store.RadioRepository
-	schedulers []gocron.Scheduler
+	Repo       store.RadioRepository
+	Schedulers []gocron.Scheduler
 }
 
 func NewApp(repo store.RadioRepository) *App {
 	ensureDataFolder()
-	app := &App{repo: repo}
+	app := &App{Repo: repo}
 	return app
 }
 
@@ -43,7 +43,7 @@ func (app *App) Run() {
 }
 
 func (app *App) Shutdown() {
-	for _, scheduler := range app.schedulers {
+	for _, scheduler := range app.Schedulers {
 		scheduler.Shutdown()
 	}
 	// Clean shutdown on SIGINT/SIGTERM
