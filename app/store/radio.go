@@ -33,7 +33,6 @@ type RadioStore struct {
 }
 
 // NewRadioStore creates a new RadioStore.
-// (Using NewRadioStore as it's more descriptive than NewShowStore given its scope)
 func NewRadioStore(repo RadioRepository) *RadioStore {
 	return &RadioStore{repo: repo}
 }
