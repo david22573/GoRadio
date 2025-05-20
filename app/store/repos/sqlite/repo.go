@@ -42,11 +42,12 @@ func migrate(db *sql.DB) error {
     );
     CREATE TABLE IF NOT EXISTS shows (
         id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        name       TEXT NOT NULL,
+        name       TEXT NOT NULL UNIQUE,
         duration   INTEGER NOT NULL,  -- stored as seconds
         day        INTEGER NOT NULL,  -- time.Weekday (0–6)
         hour       INTEGER NOT NULL,
         min        INTEGER NOT NULL,
+		scheduled  INTEGER NOT NULL DEFAULT 0,
         station_id INTEGER NOT NULL,
         FOREIGN KEY(station_id) REFERENCES stations(id) ON DELETE CASCADE
     );

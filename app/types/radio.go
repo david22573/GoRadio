@@ -19,6 +19,7 @@ type Show struct {
 	Name     string        `json:"name"`
 	Duration time.Duration `json:"duration"`
 	ShowSchedule
+	Scheduled bool `json:"scheduled"`
 	StationID uint `json:"station_id"`
 }
 

@@ -99,6 +99,7 @@ func scanShow(rows *sql.Rows) (types.Show, error) {
 		&weekday,
 		&hour,
 		&min,
+		&s.Scheduled,
 		&s.StationID,
 	)
 	if err != nil {
