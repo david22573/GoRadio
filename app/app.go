@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"embed"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/david22573/GoRadio/app/store"
+	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/go-co-op/gocron/v2"
 )
@@ -52,18 +54,17 @@ func NewApp(repo store.RadioRepository) *App {
 
 // Run starts the HTTP server and listens for shutdown signals
 func (a *App) Run(addr string) {
+	api := &API{app: a}
+	api.RegisterAPI()
 	// Serve embedded static files
-	a.Router.StaticFS("/", http.FS(a.fs)) // mounts all files from embedded FS at /
-
-	// SPA fallback: if no file matches, serve index.html
+	sFS, _ := static.EmbedFolder(rawStaticFS, "static")
+	a.Router.Use(static.Serve("/", sFS))
+	a.Router.GET("/ping", func(c *gin.Context) {
+		c.String(200, "test")
+	})
 	a.Router.NoRoute(func(c *gin.Context) {
-		// Try to serve the requested file
-		if existsInFS(a.fs, c.Request.URL.Path[1:]) {
-			c.File(c.Request.URL.Path)
-			return
-		}
-		// Otherwise fallback
-		c.FileFromFS("index.html", http.FS(a.fs))
+		fmt.Printf("%s doesn't exists, redirect on /\n", c.Request.URL.Path)
+		c.Redirect(http.StatusMovedPermanently, "/")
 	})
 
 	srv := &http.Server{
@@ -125,13 +126,4 @@ func ensureDataFolder() {
 	if err := os.MkdirAll("data", os.ModePerm); err != nil {
 		log.Fatalf("failed to create data folder: %v", err)
 	}
-}
-
-// existsInFS checks for a path in the embedded FS
-func existsInFS(fsys fs.FS, path string) bool {
-	if path == "" {
-		return false
-	}
-	_, err := fsys.Open(path)
-	return err == nil
 }
