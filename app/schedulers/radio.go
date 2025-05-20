@@ -2,6 +2,7 @@ package schedulers
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/david22573/GoRadio/app"
@@ -15,8 +16,10 @@ type RadioScheduler struct {
 	Name  string
 	URL   string
 	Shows []types.Show
-	app   *app.App
 
+	app  *app.App
+	jobs map[uint]gocron.Job
+	mu   sync.Mutex
 	// The embedded scheduler interface
 	gocron.Scheduler
 }
@@ -42,12 +45,16 @@ func NewRadioScheduler(app *app.App, station types.Station, loc *time.Location) 
 		return nil, fmt.Errorf("failed to create scheduler: %w", err)
 	}
 
+	jobs := make(map[uint]gocron.Job)
+
 	// Create the radio scheduler with embedding
 	rs := &RadioScheduler{
-		Name:      station.Name,
-		URL:       station.URL,
-		Shows:     shows,
+		Name:  station.Name,
+		URL:   station.URL,
+		Shows: shows,
+
 		app:       app,
+		jobs:      jobs,
 		Scheduler: scheduler, // Assign the created scheduler to the embedded field
 	}
 
@@ -63,9 +70,15 @@ func NewRadioScheduler(app *app.App, station types.Station, loc *time.Location) 
 	return rs, nil
 }
 
+func (r *RadioScheduler) Start() {
+	fmt.Println("Starting radio scheduler...")
+	r.Scheduler.Start()
+}
+
 // scheduleShows adds all shows to the scheduler
 func (s *RadioScheduler) scheduleShows() error {
 	for i, show := range s.Shows {
+		show := show // shadow to close properly
 		if err := s.ScheduleShow(show); err != nil {
 			return fmt.Errorf("failed to schedule show %d (%s): %w", i, show.Name, err)
 		}
@@ -75,27 +88,31 @@ func (s *RadioScheduler) scheduleShows() error {
 
 // ScheduleShow adds a single show to the scheduler
 func (s *RadioScheduler) ScheduleShow(show types.Show) error {
-	fmt.Printf("Scheduling show: %s for station: %s\n", show.Name, s.Name)
-
-	// Use the embedded scheduler directly
-	_, err := s.NewJob(
-		gocron.DailyJob(
-			1,
-			gocron.NewAtTimes(
-				gocron.NewAtTime(show.StartTime()),
-			),
-		),
-		gocron.NewTask(
-			func() {
-				fmt.Printf("Show started: %s on %s\n", show.Name, s.Name)
-				// Call app methods to handle the show
-			},
-		),
-	)
-
+	jobDef := gocron.DailyJob(1, gocron.NewAtTimes(gocron.NewAtTime(show.StartTime())))
+	task := gocron.NewTask(func() {
+		// … run the show …
+	})
+	job, err := s.NewJob(jobDef, task)
 	if err != nil {
-		return fmt.Errorf("failed to schedule job for show %s: %w", show.Name, err)
+		return err
 	}
 
+	s.mu.Lock()
+	s.jobs[show.ID] = job
+	s.mu.Unlock()
 	return nil
+}
+
+// CancelShow cancels a previously scheduled show by ID.
+func (s *RadioScheduler) CancelShow(showID uint) error {
+	s.mu.Lock()
+	job, ok := s.jobs[showID]
+	s.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("no job found for show %q", showID)
+	}
+	s.mu.Lock()
+	delete(s.jobs, showID)
+	s.mu.Unlock()
+	return s.RemoveJob(job.ID())
 }

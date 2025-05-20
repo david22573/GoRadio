@@ -13,17 +13,17 @@ var ErrNotFound = errors.New("requested item not found")
 // RadioRepository defines the interface for radio data storage operations.
 type RadioRepository interface {
 	GetAllStations() ([]types.Station, error)
-	GetStationByID(id int) (*types.Station, error)
+	GetStationByID(id uint) (*types.Station, error)
 	CreateStation(station *types.Station) error
 	UpdateStation(station *types.Station) error
-	DeleteStation(id int) error
+	DeleteStation(id uint) error
 
 	GetAllShows() ([]types.Show, error)
-	GetAllShowsByStation(stationID int) ([]types.Show, error)
-	GetShowByID(id int) (*types.Show, error)
+	GetAllShowsByStation(stationID uint) ([]types.Show, error)
+	GetShowByID(id uint) (*types.Show, error)
 	CreateShow(show *types.Show) error
 	UpdateShow(show *types.Show) error
-	DeleteShow(id int) error
+	DeleteShow(id uint) error
 }
 
 // RadioStore provides methods to interact with radio data, using a repository.
@@ -42,7 +42,7 @@ func (s *RadioStore) GetAllStations() ([]types.Station, error) {
 }
 
 // GetStationByID retrieves a station by its ID.
-func (s *RadioStore) GetStationByID(id int) (*types.Station, error) {
+func (s *RadioStore) GetStationByID(id uint) (*types.Station, error) {
 	return s.repo.GetStationByID(id)
 }
 
@@ -57,12 +57,12 @@ func (s *RadioStore) GetAllShows() ([]types.Show, error) {
 }
 
 // GetAllShowsByStation retrieves all shows for a given station ID.
-func (s *RadioStore) GetAllShowsByStation(stationID int) ([]types.Show, error) {
+func (s *RadioStore) GetAllShowsByStation(stationID uint) ([]types.Show, error) {
 	return s.repo.GetAllShowsByStation(stationID)
 }
 
 // GetShowByID retrieves a show by its ID.
-func (s *RadioStore) GetShowByID(id int) (*types.Show, error) {
+func (s *RadioStore) GetShowByID(id uint) (*types.Show, error) {
 	return s.repo.GetShowByID(id)
 }
 
@@ -77,6 +77,6 @@ func (s *RadioStore) UpdateShow(show *types.Show) error {
 }
 
 // DeleteShow deletes a show by its ID.
-func (s *RadioStore) DeleteShow(id int) error {
+func (s *RadioStore) DeleteShow(id uint) error {
 	return s.repo.DeleteShow(id)
 }

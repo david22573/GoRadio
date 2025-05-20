@@ -18,20 +18,20 @@ func (r *sqliteRepo) GetStationByName(name string) (*types.Station, error) {
 }
 
 // GetStationByID loads a station by its primary key.
-func (r *sqliteRepo) GetStationByID(id int) (*types.Station, error) {
+func (r *sqliteRepo) GetStationByID(id uint) (*types.Station, error) {
 	query := `SELECT id, name, url FROM stations WHERE id = ?`
 	return querySingle(r.db, scanStation, query, id)
 }
 
 // CreateStation inserts a new station.
 func (r *sqliteRepo) CreateStation(station *types.Station) error {
-	query := `INSERT INTO stations (name, url) VALUES (?, ?)`
+	query := `INSERT uintO stations (name, url) VALUES (?, ?)`
 	id, err := execInsert(r.db, query, station.Name, station.URL)
 	if err != nil {
-		// You might want to check for specific errors, e.g., UNIQUE constraint violations
+		// You might want to check for specific errors, e.g., UNIQUE constrauint violations
 		return err
 	}
-	station.ID = int(id)
+	station.ID = uint(id)
 	return nil
 }
 
@@ -40,14 +40,14 @@ func (r *sqliteRepo) UpdateStation(station *types.Station) error {
 	query := `UPDATE stations SET name = ?, url = ? WHERE id = ?`
 	_, err := execAffected(r.db, query, station.Name, station.URL, station.ID)
 	if err != nil {
-		// You might want to check for specific errors, e.g., UNIQUE constraint violations
+		// You might want to check for specific errors, e.g., UNIQUE constrauint violations
 		return err
 	}
 	return nil
 }
 
 // DeleteStation removes a station by ID.
-func (r *sqliteRepo) DeleteStation(id int) error {
+func (r *sqliteRepo) DeleteStation(id uint) error {
 	query := `DELETE FROM stations WHERE id = ?`
 	_, err := execAffected(r.db, query, id)
 	return err
@@ -60,13 +60,13 @@ func (r *sqliteRepo) GetAllShows() ([]types.Show, error) {
 }
 
 // GetAllShowsByStation returns shows filtered by station ID.
-func (r *sqliteRepo) GetAllShowsByStation(stationID int) ([]types.Show, error) {
+func (r *sqliteRepo) GetAllShowsByStation(stationID uint) ([]types.Show, error) {
 	query := `SELECT id, name, duration, day, hour, min, station_id FROM shows WHERE station_id = ? ORDER BY day, hour, min`
 	return queryMultiple(r.db, scanShow, query, stationID)
 }
 
 // GetShowByID loads a single show.
-func (r *sqliteRepo) GetShowByID(id int) (*types.Show, error) {
+func (r *sqliteRepo) GetShowByID(id uint) (*types.Show, error) {
 	query := `SELECT id, name, duration, day, hour, min, station_id FROM shows WHERE id = ?`
 	return querySingle(r.db, scanShow, query, id)
 }
@@ -79,19 +79,19 @@ func (r *sqliteRepo) GetShowByName(name string) (*types.Show, error) {
 
 // CreateShow inserts a new show.
 func (r *sqliteRepo) CreateShow(s *types.Show) error {
-	query := `INSERT INTO shows (name, duration, day, hour, min, station_id) VALUES (?, ?, ?, ?, ?, ?)`
+	query := `INSERT uintO shows (name, duration, day, hour, min, station_id) VALUES (?, ?, ?, ?, ?, ?)`
 	id, err := execInsert(r.db, query,
 		s.Name,
-		int64(s.Duration.Seconds()),
-		int(s.Day), // s.Day from types.ShowSchedule (embedded)
-		s.Hour,     // s.Hour from types.ShowSchedule
-		s.Min,      // s.Min from types.ShowSchedule
+		uint64(s.Duration.Seconds()),
+		uint(s.Day), // s.Day from types.ShowSchedule (embedded)
+		s.Hour,      // s.Hour from types.ShowSchedule
+		s.Min,       // s.Min from types.ShowSchedule
 		s.StationID,
 	)
 	if err != nil {
 		return err
 	}
-	s.ID = int(id)
+	s.ID = uint(id)
 	return nil
 }
 
@@ -100,8 +100,8 @@ func (r *sqliteRepo) UpdateShow(s *types.Show) error {
 	query := `UPDATE shows SET name = ?, duration = ?, day = ?, hour = ?, min = ?, station_id = ? WHERE id = ?`
 	affected, err := execAffected(r.db, query,
 		s.Name,
-		int64(s.Duration.Seconds()),
-		int(s.Day),
+		uint64(s.Duration.Seconds()),
+		uint(s.Day),
 		s.Hour,
 		s.Min,
 		s.StationID,
@@ -117,7 +117,7 @@ func (r *sqliteRepo) UpdateShow(s *types.Show) error {
 }
 
 // DeleteShow removes a show by ID.
-func (r *sqliteRepo) DeleteShow(id int) error {
+func (r *sqliteRepo) DeleteShow(id uint) error {
 	query := `DELETE FROM shows WHERE id = ?`
 	affected, err := execAffected(r.db, query, id)
 	if err != nil {

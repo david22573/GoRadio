@@ -3,7 +3,7 @@ package types
 import "time"
 
 type Station struct {
-	ID   int    `json:"id"`
+	ID   uint   `json:"id"`
 	Name string `json:"name"`
 	URL  string `json:"url"`
 }
@@ -15,11 +15,11 @@ type ShowSchedule struct {
 }
 
 type Show struct {
-	ID       int           `json:"id"`
+	ID       uint          `json:"id"`
 	Name     string        `json:"name"`
 	Duration time.Duration `json:"duration"`
 	ShowSchedule
-	StationID int `json:"station_id"`
+	StationID uint `json:"station_id"`
 }
 
 func (s Show) StartTime() (uint, uint, uint) {

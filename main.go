@@ -1,12 +1,10 @@
 package main
 
 import (
-	"time"
-
 	"github.com/david22573/GoRadio/app"
 	"github.com/david22573/GoRadio/app/schedulers"
 	"github.com/david22573/GoRadio/app/store/repos/sqlite"
-	"github.com/go-co-op/gocron/v2"
+	"github.com/david22573/GoRadio/app/types"
 )
 
 func main() {
@@ -16,18 +14,15 @@ func main() {
 	}
 
 	app := app.NewApp(repo)
-	rs, err := schedulers.NewRadioScheduler(app, "kxlu", "http://ksl.com", nil)
+	testStation := types.Station{
+		Name: "kxlu",
+		URL:  "http://ksl.com",
+	}
+	rs, err := schedulers.NewRadioScheduler(app, testStation, nil)
 	if err != nil {
 		panic(err)
 	}
-	rs.NewJob(
-		gocron.WeeklyJob(
-			1,
-			gocron.NewWeekdays(time.Sunday),
-			gocron.NewAtTimes(gocron.NewAtTime(21, 1, 0)),
-		),
-		gocron.NewTask(func() { println("hi") }),
-	)
-	rs.Start()
+	app.AddSchedulers(rs)
+	app.StartAllSchedulers()
 	app.Run()
 }
