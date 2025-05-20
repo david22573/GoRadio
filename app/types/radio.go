@@ -21,3 +21,7 @@ type Show struct {
 	ShowSchedule
 	StationID int `json:"station_id"`
 }
+
+func (s Show) StartTime() (uint, uint, uint) {
+	return s.Hour, s.Min, 0
+}

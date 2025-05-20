@@ -9,21 +9,25 @@ import (
 	"github.com/go-co-op/gocron/v2"
 )
 
+// RadioScheduler embeds gocron.Scheduler for scheduler functionality
+// while adding radio-specific state
 type RadioScheduler struct {
 	Name  string
 	URL   string
 	Shows []types.Show
+	app   *app.App
 
-	app *app.App
-
+	// The embedded scheduler interface
 	gocron.Scheduler
 }
 
-func NewRadioScheduler(app *app.App, station types.Station, loc *time.Location) (gocron.Scheduler, error) {
+// NewRadioScheduler creates a new RadioScheduler
+func NewRadioScheduler(app *app.App, station types.Station, loc *time.Location) (*RadioScheduler, error) {
 	shows, err := app.Repo.GetAllShowsByStation(station.ID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get shows: %w", err)
 	}
+
 	if loc == nil {
 		var err error
 		loc, err = time.LoadLocation("America/Los_Angeles")
@@ -31,30 +35,67 @@ func NewRadioScheduler(app *app.App, station types.Station, loc *time.Location) 
 			return nil, fmt.Errorf("failed to load location: %w", err)
 		}
 	}
-	sched, err := gocron.NewScheduler(gocron.WithLocation(loc))
+
+	// Create the base scheduler
+	scheduler, err := gocron.NewScheduler(gocron.WithLocation(loc))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scheduler: %w", err)
 	}
-	return &RadioScheduler{
-		Name:  station.Name,
-		URL:   station.URL,
-		Shows: shows,
 
-		app: app,
+	// Create the radio scheduler with embedding
+	rs := &RadioScheduler{
+		Name:      station.Name,
+		URL:       station.URL,
+		Shows:     shows,
+		app:       app,
+		Scheduler: scheduler, // Assign the created scheduler to the embedded field
+	}
 
-		Scheduler: sched,
-	}, nil
+	// Schedule shows
+	if err := rs.scheduleShows(); err != nil {
+		// Clean up on failure
+		if shutdownErr := scheduler.Shutdown(); shutdownErr != nil {
+			fmt.Printf("Failed to shutdown scheduler: %v\n", shutdownErr)
+		}
+		return nil, fmt.Errorf("failed to schedule shows: %w", err)
+	}
+
+	return rs, nil
 }
 
+// scheduleShows adds all shows to the scheduler
 func (s *RadioScheduler) scheduleShows() error {
-	for _, show := range s.Shows {
+	for i, show := range s.Shows {
 		if err := s.ScheduleShow(show); err != nil {
-			return err
+			return fmt.Errorf("failed to schedule show %d (%s): %w", i, show.Name, err)
 		}
 	}
 	return nil
 }
 
+// ScheduleShow adds a single show to the scheduler
 func (s *RadioScheduler) ScheduleShow(show types.Show) error {
+	fmt.Printf("Scheduling show: %s for station: %s\n", show.Name, s.Name)
+
+	// Use the embedded scheduler directly
+	_, err := s.NewJob(
+		gocron.DailyJob(
+			1,
+			gocron.NewAtTimes(
+				gocron.NewAtTime(show.StartTime()),
+			),
+		),
+		gocron.NewTask(
+			func() {
+				fmt.Printf("Show started: %s on %s\n", show.Name, s.Name)
+				// Call app methods to handle the show
+			},
+		),
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to schedule job for show %s: %w", show.Name, err)
+	}
+
 	return nil
 }
