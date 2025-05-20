@@ -10,7 +10,7 @@ import (
 	"github.com/david22573/GoRadio/app/store"
 )
 
-type sqliteRepo struct {
+type SqliteRepo struct {
 	db *sql.DB
 }
 
@@ -30,7 +30,7 @@ func NewSQLiteRepo(filename string) (store.RadioRepository, error) {
 		db.Close()
 		return nil, err
 	}
-	return &sqliteRepo{db: db}, nil
+	return &SqliteRepo{db: db}, nil
 }
 
 func migrate(db *sql.DB) error {
@@ -57,6 +57,6 @@ func migrate(db *sql.DB) error {
 }
 
 // Close shuts down the underlying database.
-func (r *sqliteRepo) Close() error {
+func (r *SqliteRepo) Close() error {
 	return r.db.Close()
 }

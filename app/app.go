@@ -1,98 +1,137 @@
 package app
 
 import (
-	"fmt"
+	"context"
+	"embed"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/david22573/GoRadio/app/store"
+	"github.com/gin-gonic/gin"
 	"github.com/go-co-op/gocron/v2"
 )
 
-type App struct {
-	Repo store.RadioRepository
+//go:embed static/*
+var rawStaticFS embed.FS
 
+// App holds application state and scheduled jobs
+type App struct {
+	Router     *gin.Engine
+	Repo       store.RadioRepository
 	schedulers []gocron.Scheduler
 	mu         sync.Mutex
+	fs         fs.FS
 }
 
+// NewApp constructs an App, embedding static assets and setting up storage
 func NewApp(repo store.RadioRepository) *App {
 	ensureDataFolder()
-	schdulers := make([]gocron.Scheduler, 0)
-	return &App{Repo: repo, schedulers: schdulers}
+
+	// Prepare embedded FS rooted at "static"
+	staticFS, err := fs.Sub(rawStaticFS, "static")
+	if err != nil {
+		log.Fatalf("failed to sub static FS: %v", err)
+	}
+
+	router := gin.New()
+	router.Use(gin.Logger(), gin.Recovery())
+
+	return &App{
+		Router:     router,
+		Repo:       repo,
+		schedulers: make([]gocron.Scheduler, 0),
+		fs:         staticFS,
+	}
 }
 
-func (app *App) Run() {
-	router := NewRouter()
+// Run starts the HTTP server and listens for shutdown signals
+func (a *App) Run(addr string) {
+	// Serve embedded static files
+	a.Router.StaticFS("/", http.FS(a.fs)) // mounts all files from embedded FS at /
+
+	// SPA fallback: if no file matches, serve index.html
+	a.Router.NoRoute(func(c *gin.Context) {
+		// Try to serve the requested file
+		if existsInFS(a.fs, c.Request.URL.Path[1:]) {
+			c.File(c.Request.URL.Path)
+			return
+		}
+		// Otherwise fallback
+		c.FileFromFS("index.html", http.FS(a.fs))
+	})
 
 	srv := &http.Server{
-		Addr:    ":8080",
-		Handler: router,
+		Addr:    addr,
+		Handler: a.Router,
 	}
+
+	// Start in background
 	go func() {
+		log.Printf("🚀 Listening on %s...", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("HTTP server error: %v", err)
 		}
 	}()
-	log.Printf("🚀 server listening on %s", srv.Addr)
 
-	// 4. Wait for SIGINT/SIGTERM
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
-	<-quit
+	// Graceful shutdown
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	<-stop
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	a.StartAllSchedulers()
+	defer a.ShutdownAllSchedulers()
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("HTTP shutdown error: %v", err)
+	}
+	log.Println("Server gracefully stopped")
 }
 
-// AddScheduler adds a new scheduler to the app
-func (a *App) AddSchedulers(schedulers ...gocron.Scheduler) {
+// AddSchedulers registers new schedulers to the app
+func (a *App) AddScheduler(schs gocron.Scheduler) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	for _, scheduler := range schedulers {
-		a.schedulers = append(a.schedulers, scheduler)
+	a.schedulers = append(a.schedulers, schs)
+}
+
+// StartAllSchedulers starts all registered schedulers
+func (a *App) StartAllSchedulers() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, sch := range a.schedulers {
+		sch.Start()
 	}
 }
 
-// StartAllSchedulers starts all schedulers
-func (a *App) StartAllSchedulers() error {
+// ShutdownAllSchedulers stops all registered schedulers
+func (a *App) ShutdownAllSchedulers() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-
-	for _, scheduler := range a.schedulers {
-		scheduler.Start()
-	}
-
-	return nil
-}
-
-// ShutdownAllSchedulers stops all schedulers
-func (a *App) ShutdownAllSchedulers() error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	var lastErr error
-	for i, scheduler := range a.schedulers {
-		if err := scheduler.Shutdown(); err != nil {
-			lastErr = fmt.Errorf("failed to shutdown scheduler %d: %w", i, err)
-			fmt.Printf("Error shutting down scheduler %d: %v\n", i, err)
+	for _, sch := range a.schedulers {
+		if err := sch.Shutdown(); err != nil {
+			log.Printf("error shutting down scheduler: %v", err)
 		}
 	}
-
-	return lastErr
-}
-
-func (a *App) Shutdown() {
-	a.ShutdownAllSchedulers()
-	// Clean shutdown on SIGINT/SIGTERM
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	<-sigCh
 }
 
 func ensureDataFolder() {
 	if err := os.MkdirAll("data", os.ModePerm); err != nil {
 		log.Fatalf("failed to create data folder: %v", err)
 	}
+}
+
+// existsInFS checks for a path in the embedded FS
+func existsInFS(fsys fs.FS, path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := fsys.Open(path)
+	return err == nil
 }

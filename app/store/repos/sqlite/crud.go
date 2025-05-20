@@ -6,25 +6,25 @@ import (
 )
 
 // GetAllStations returns all stations.
-func (r *sqliteRepo) GetAllStations() ([]types.Station, error) {
+func (r *SqliteRepo) GetAllStations() ([]types.Station, error) {
 	query := `SELECT id, name, url FROM stations ORDER BY name`
 	return queryMultiple(r.db, scanStation, query)
 }
 
 // GetStationByName loads a station by its primary name.
-func (r *sqliteRepo) GetStationByName(name string) (*types.Station, error) {
+func (r *SqliteRepo) GetStationByName(name string) (*types.Station, error) {
 	query := `SELECT id, name, url FROM stations WHERE name = ?`
 	return querySingle(r.db, scanStation, query, name)
 }
 
 // GetStationByID loads a station by its primary key.
-func (r *sqliteRepo) GetStationByID(id uint) (*types.Station, error) {
+func (r *SqliteRepo) GetStationByID(id uint) (*types.Station, error) {
 	query := `SELECT id, name, url FROM stations WHERE id = ?`
 	return querySingle(r.db, scanStation, query, id)
 }
 
 // CreateStation inserts a new station.
-func (r *sqliteRepo) CreateStation(station *types.Station) error {
+func (r *SqliteRepo) CreateStation(station *types.Station) error {
 	query := `INSERT INTO stations (name, url) VALUES (?, ?)`
 	id, err := execInsert(r.db, query, station.Name, station.URL)
 	if err != nil {
@@ -36,7 +36,7 @@ func (r *sqliteRepo) CreateStation(station *types.Station) error {
 }
 
 // UpdateStation modifies an existing station.
-func (r *sqliteRepo) UpdateStation(station *types.Station) error {
+func (r *SqliteRepo) UpdateStation(station *types.Station) error {
 	query := `UPDATE stations SET name = ?, url = ? WHERE id = ?`
 	_, err := execAffected(r.db, query, station.Name, station.URL, station.ID)
 	if err != nil {
@@ -47,38 +47,38 @@ func (r *sqliteRepo) UpdateStation(station *types.Station) error {
 }
 
 // DeleteStation removes a station by ID.
-func (r *sqliteRepo) DeleteStation(id uint) error {
+func (r *SqliteRepo) DeleteStation(id uint) error {
 	query := `DELETE FROM stations WHERE id = ?`
 	_, err := execAffected(r.db, query, id)
 	return err
 }
 
 // GetAllShows returns every show in the DB.
-func (r *sqliteRepo) GetAllShows() ([]types.Show, error) {
+func (r *SqliteRepo) GetAllShows() ([]types.Show, error) {
 	query := `SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows ORDER BY station_id, day, hour, min`
 	return queryMultiple(r.db, scanShow, query)
 }
 
 // GetAllShowsByStation returns shows filtered by station ID.
-func (r *sqliteRepo) GetAllShowsByStation(stationID uint) ([]types.Show, error) {
+func (r *SqliteRepo) GetAllShowsByStation(stationID uint) ([]types.Show, error) {
 	query := `SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows WHERE station_id = ? ORDER BY day, hour, min`
 	return queryMultiple(r.db, scanShow, query, stationID)
 }
 
 // GetShowByID loads a single show.
-func (r *sqliteRepo) GetShowByID(id uint) (*types.Show, error) {
+func (r *SqliteRepo) GetShowByID(id uint) (*types.Show, error) {
 	query := `SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows WHERE id = ?`
 	return querySingle(r.db, scanShow, query, id)
 }
 
 // GetStationByName loads a station by its primary name.
-func (r *sqliteRepo) GetShowByName(name string) (*types.Show, error) {
+func (r *SqliteRepo) GetShowByName(name string) (*types.Show, error) {
 	query := `SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows WHERE id = ?`
 	return querySingle(r.db, scanShow, query, name)
 }
 
 // CreateShow inserts a new show.
-func (r *sqliteRepo) CreateShow(s *types.Show) error {
+func (r *SqliteRepo) CreateShow(s *types.Show) error {
 	query := `INSERT INTO shows (name, duration, day, hour, min, station_id) VALUES (?, ?, ?, ?, ?, ?)`
 	id, err := execInsert(r.db, query,
 		s.Name,
@@ -96,7 +96,7 @@ func (r *sqliteRepo) CreateShow(s *types.Show) error {
 }
 
 // UpdateShow modifies an existing show.
-func (r *sqliteRepo) UpdateShow(s *types.Show) error {
+func (r *SqliteRepo) UpdateShow(s *types.Show) error {
 	query := `UPDATE shows SET name = ?, duration = ?, day = ?, hour = ?, min = ?, scheduled = ?, station_id = ? WHERE id = ?`
 	affected, err := execAffected(r.db, query,
 		s.Name,
@@ -118,7 +118,7 @@ func (r *sqliteRepo) UpdateShow(s *types.Show) error {
 }
 
 // DeleteShow removes a show by ID.
-func (r *sqliteRepo) DeleteShow(id uint) error {
+func (r *SqliteRepo) DeleteShow(id uint) error {
 	query := `DELETE FROM shows WHERE id = ?`
 	affected, err := execAffected(r.db, query, id)
 	if err != nil {
