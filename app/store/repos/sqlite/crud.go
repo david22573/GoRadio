@@ -25,7 +25,7 @@ func (r *sqliteRepo) GetStationByID(id uint) (*types.Station, error) {
 
 // CreateStation inserts a new station.
 func (r *sqliteRepo) CreateStation(station *types.Station) error {
-	query := `INSERT uintO stations (name, url) VALUES (?, ?)`
+	query := `INSERT INTO stations (name, url) VALUES (?, ?)`
 	id, err := execInsert(r.db, query, station.Name, station.URL)
 	if err != nil {
 		// You might want to check for specific errors, e.g., UNIQUE constrauint violations
@@ -55,31 +55,31 @@ func (r *sqliteRepo) DeleteStation(id uint) error {
 
 // GetAllShows returns every show in the DB.
 func (r *sqliteRepo) GetAllShows() ([]types.Show, error) {
-	query := `SELECT id, name, duration, day, hour, min, station_id FROM shows ORDER BY station_id, day, hour, min`
+	query := `SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows ORDER BY station_id, day, hour, min`
 	return queryMultiple(r.db, scanShow, query)
 }
 
 // GetAllShowsByStation returns shows filtered by station ID.
 func (r *sqliteRepo) GetAllShowsByStation(stationID uint) ([]types.Show, error) {
-	query := `SELECT id, name, duration, day, hour, min, station_id FROM shows WHERE station_id = ? ORDER BY day, hour, min`
+	query := `SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows WHERE station_id = ? ORDER BY day, hour, min`
 	return queryMultiple(r.db, scanShow, query, stationID)
 }
 
 // GetShowByID loads a single show.
 func (r *sqliteRepo) GetShowByID(id uint) (*types.Show, error) {
-	query := `SELECT id, name, duration, day, hour, min, station_id FROM shows WHERE id = ?`
+	query := `SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows WHERE id = ?`
 	return querySingle(r.db, scanShow, query, id)
 }
 
 // GetStationByName loads a station by its primary name.
 func (r *sqliteRepo) GetShowByName(name string) (*types.Show, error) {
-	query := `SELECT id, name, duration, day, hour, min, station_id FROM shows WHERE id = ?`
+	query := `SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows WHERE id = ?`
 	return querySingle(r.db, scanShow, query, name)
 }
 
 // CreateShow inserts a new show.
 func (r *sqliteRepo) CreateShow(s *types.Show) error {
-	query := `INSERT uintO shows (name, duration, day, hour, min, station_id) VALUES (?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO shows (name, duration, day, hour, min, station_id) VALUES (?, ?, ?, ?, ?, ?)`
 	id, err := execInsert(r.db, query,
 		s.Name,
 		uint64(s.Duration.Seconds()),
@@ -97,7 +97,7 @@ func (r *sqliteRepo) CreateShow(s *types.Show) error {
 
 // UpdateShow modifies an existing show.
 func (r *sqliteRepo) UpdateShow(s *types.Show) error {
-	query := `UPDATE shows SET name = ?, duration = ?, day = ?, hour = ?, min = ?, station_id = ? WHERE id = ?`
+	query := `UPDATE shows SET name = ?, duration = ?, day = ?, hour = ?, min = ?, scheduled = ?, station_id = ? WHERE id = ?`
 	affected, err := execAffected(r.db, query,
 		s.Name,
 		uint64(s.Duration.Seconds()),
@@ -105,6 +105,7 @@ func (r *sqliteRepo) UpdateShow(s *types.Show) error {
 		s.Hour,
 		s.Min,
 		s.StationID,
+		s.Scheduled,
 		s.ID, // s.ID for WHERE clause
 	)
 	if err != nil {

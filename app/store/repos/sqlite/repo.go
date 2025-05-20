@@ -55,3 +55,8 @@ func migrate(db *sql.DB) error {
 	_, err := db.Exec(schema)
 	return err
 }
+
+// Close shuts down the underlying database.
+func (r *sqliteRepo) Close() error {
+	return r.db.Close()
+}

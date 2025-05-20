@@ -14,6 +14,7 @@ var ErrNotFound = errors.New("requested item not found")
 type RadioRepository interface {
 	GetAllStations() ([]types.Station, error)
 	GetStationByID(id uint) (*types.Station, error)
+	GetStationByName(name string) (*types.Station, error)
 	CreateStation(station *types.Station) error
 	UpdateStation(station *types.Station) error
 	DeleteStation(id uint) error
@@ -24,6 +25,8 @@ type RadioRepository interface {
 	CreateShow(show *types.Show) error
 	UpdateShow(show *types.Show) error
 	DeleteShow(id uint) error
+
+	Close() error
 }
 
 // RadioStore provides methods to interact with radio data, using a repository.
@@ -46,9 +49,22 @@ func (s *RadioStore) GetStationByID(id uint) (*types.Station, error) {
 	return s.repo.GetStationByID(id)
 }
 
+func (s *RadioStore) GetStationByName(name string) (*types.Station, error) {
+	return s.repo.GetStationByName(name)
+}
+
 // CreateStation creates a new station.
 func (s *RadioStore) CreateStation(station *types.Station) error {
 	return s.repo.CreateStation(station)
+}
+
+func (s *RadioStore) UpdateStation(station *types.Station) error {
+	return s.repo.UpdateStation(station)
+}
+
+// DeleteStation deletes a station by its ID.
+func (s *RadioStore) DeleteStation(id uint) error {
+	return s.repo.DeleteStation(id)
 }
 
 // GetAllShows retrieves all shows.
