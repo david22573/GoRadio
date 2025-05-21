@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -28,7 +29,14 @@ type App struct {
 // NewApp constructs an App, embedding static assets and setting up storage.
 func NewApp(repo store.RadioRepository) (*App, error) {
 	r := gin.Default()
-	r.LoadHTMLGlob("templates/**/*.tmpl")
+
+	htmlRenderer, err := NewRenderer("templates")
+	if err != nil {
+		log.Fatalf("template init failed: %v", err)
+	}
+
+	r.HTMLRender = htmlRenderer
+
 	r.Static("/static", "static")
 
 	r.GET("/health", func(c *gin.Context) {
@@ -84,6 +92,7 @@ func (a *App) Run(addr string) error {
 		errChan <- srv.ListenAndServe()
 	}()
 
+	fmt.Printf("🚀 Serving on http://localhost%s\n", addr)
 	stop := make(chan os.Signal, 2)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
