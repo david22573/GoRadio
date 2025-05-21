@@ -9,3 +9,9 @@ run:
 buildr:
 	@make build
 	@make run
+
+
+web-dev:
+	@cd ./frontend  && pnpm dev
+web-build:
+	@cd ./frontend  && pnpm build
