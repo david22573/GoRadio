@@ -25,8 +25,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	app := app.NewApp(repo)
-
+	app, err := app.NewApp(repo)
+	if err != nil {
+		log.Fatal(err)
+	}
 	if station, err := repo.GetAllStations(); err == nil {
 		for _, s := range station {
 			scheduler, err := schedulers.NewRadioScheduler(app, s, nil)

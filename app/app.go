@@ -14,73 +14,61 @@ import (
 	"time"
 
 	"github.com/david22573/GoRadio/app/store"
+	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/go-co-op/gocron/v2"
 )
+
+type assetMap map[string]struct{}
 
 //go:embed static/*
 var rawStaticFS embed.FS
 
 // App holds application state, file map, and scheduled jobs.
 type App struct {
-	Router     *gin.Engine
-	Repo       store.RadioRepository
+	Router *gin.Engine
+	Repo   store.RadioRepository
+
+	assetMap   assetMap
 	schedulers []gocron.Scheduler
-	mu         sync.Mutex
-	fs         fs.FS
-	fileMap    map[string]struct{}
+	fs         static.ServeFileSystem
+
+	mu sync.Mutex
 }
 
 // NewApp constructs an App, embedding static assets and setting up storage.
 // It returns an error instead of calling log.Fatal.
 func NewApp(repo store.RadioRepository) (*App, error) {
-	// Ensure data folder exists
 	if err := os.MkdirAll("data", os.ModePerm); err != nil {
 		return nil, fmt.Errorf("create data folder: %w", err)
 	}
 
-	// Prepare embedded FS rooted at "static"
-	staticFS, err := fs.Sub(rawStaticFS, "static")
+	staticFS, err := static.EmbedFolder(rawStaticFS, "static")
 	if err != nil {
-		return nil, fmt.Errorf("embed static fs: %w", err)
+		return nil, fmt.Errorf("setup assets: %w", err)
 	}
-
-	// Preload file paths for O(1) lookup
-	fileMap := make(map[string]struct{})
-	fs.WalkDir(staticFS, ".", func(path string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() {
-			fileMap["/"+path] = struct{}{}
-		}
-		return nil
-	})
 
 	// Initialize Gin router
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 
 	return &App{
-		Router:     router,
-		Repo:       repo,
+		Router: router,
+		Repo:   repo,
+
 		schedulers: []gocron.Scheduler{},
 		fs:         staticFS,
-		fileMap:    fileMap,
 	}, nil
 }
 
 // registerStatic sets up embedded file serving with a fast map-based lookup.
 func (a *App) registerStatic() {
-	// Serve everything under "/"
-	a.Router.StaticFS("/", http.FS(a.fs))
-
-	// SPA fallback: if path not in map, serve index.html
+	a.Router.Use(static.Serve("/", a.fs))
 	a.Router.NoRoute(func(c *gin.Context) {
-		p := c.Request.URL.Path
-		if _, ok := a.fileMap[p]; ok {
-			c.FileFromFS(p[1:], http.FS(a.fs))
-		} else {
-			c.FileFromFS("index.html", http.FS(a.fs))
-		}
+		fmt.Printf("%s doesn't exists, redirect on /\n", c.Request.URL.Path)
+		c.Redirect(http.StatusMovedPermanently, "/")
 	})
+
 }
 
 // AddScheduler registers a new pointer-based scheduler.
@@ -111,11 +99,11 @@ func (a *App) StopAll() {
 // Run starts cron jobs, the HTTP server, and gracefully handles shutdown.
 func (a *App) Run(addr string) error {
 	// Register static assets and routes
-	a.registerStatic()
 	a.Router.GET("/ping", func(c *gin.Context) {
 		c.String(http.StatusOK, "pong")
 	})
 
+	a.registerStatic()
 	// Start all cron jobs before serving
 	a.StartAll()
 
@@ -147,4 +135,21 @@ func (a *App) Run(addr string) error {
 	a.StopAll()
 	log.Println("Server gracefully stopped")
 	return nil
+}
+
+func setupAssets(staticFs embed.FS) (assetMap, error) {
+	staticFS, err := fs.Sub(staticFs, "static")
+	if err != nil {
+		return nil, fmt.Errorf("embed static fs: %w", err)
+	}
+
+	// Preload file paths for O(1) lookup
+	fileMap := make(assetMap)
+	fs.WalkDir(staticFS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			fileMap["/"+path] = struct{}{}
+		}
+		return err
+	})
+	return fileMap, nil
 }
