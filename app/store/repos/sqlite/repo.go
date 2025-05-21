@@ -16,7 +16,10 @@ type SqliteRepo struct {
 
 // NewSQLiteRepo opens (and migrates) the database and returns a RadioRepository.
 func NewSQLiteRepo(filename string) (store.RadioRepository, error) {
-	_ = os.MkdirAll("data", os.ModePerm)
+	if err := os.MkdirAll("data", os.ModePerm); err != nil {
+		return nil, fmt.Errorf("error creating data folder: %w", err)
+	}
+
 	dsn := fmt.Sprintf("data/%s", filename)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
