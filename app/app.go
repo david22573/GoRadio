@@ -37,8 +37,6 @@ func NewApp(repo store.RadioRepository) (*App, error) {
 
 	r.HTMLRender = htmlRenderer
 
-	r.Static("/static", "static")
-
 	r.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "OK")
 	})
@@ -78,7 +76,7 @@ func (a *App) StopSchedulers() {
 // Run starts the HTTP server, cron jobs, and handles graceful shutdown.
 func (a *App) Run(addr string) error {
 	RegisterRoutes(a)
-
+	a.Router.Static("/static", "static")
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: a.Router,
