@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -29,18 +31,6 @@ type App struct {
 // NewApp constructs an App, embedding static assets and setting up storage.
 func NewApp(repo store.RadioRepository) (*App, error) {
 	r := gin.Default()
-
-	htmlRenderer, err := NewRenderer("templates")
-	if err != nil {
-		log.Fatalf("template init failed: %v", err)
-	}
-
-	r.HTMLRender = htmlRenderer
-
-	r.GET("/health", func(c *gin.Context) {
-		c.String(http.StatusOK, "OK")
-	})
-
 	return &App{
 		Router:     r,
 		Repo:       repo,
@@ -75,8 +65,36 @@ func (a *App) StopSchedulers() {
 
 // Run starts the HTTP server, cron jobs, and handles graceful shutdown.
 func (a *App) Run(addr string) error {
-	RegisterRoutes(a)
+	a.Router.StaticFS("/", http.Dir("frontend/build"))
+	a.Router.NoRoute(func(c *gin.Context) {
+		// Only serve index.html if the request is likely for an HTML page
+		// and not for a missing static asset (which StaticFS would have handled if it existed)
+		// This check helps avoid serving index.html for things like missing image requests.
+		// However, for a strict SPA setup where SvelteKit handles all routing,
+		// always serving index.html for NoRoute might be desired.
+
+		// Check if the request path is under our Svelte app's base path
+		if strings.HasPrefix(c.Request.URL.Path, "/") {
+			// Construct the path to the fallback HTML file
+			fallbackFile := filepath.Join("frontend/build", "404.html") // Or your configured fallback, e.g., "200.html"
+
+			// Check if the fallback file exists
+			if _, err := os.Stat(fallbackFile); !os.IsNotExist(err) {
+				c.File(fallbackFile)
+				return
+			}
+		}
+
+		// Default 404 if no Svelte app base path match or fallback file doesn't exist
+		c.JSON(http.StatusNotFound, gin.H{"code": "PAGE_NOT_FOUND", "message": "Page not found"})
+	})
+
 	a.Router.Static("/static", "static")
+	a.Router.GET("/health", func(c *gin.Context) {
+		c.String(http.StatusOK, "OK")
+	})
+	RegisterRoutes(a)
+
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: a.Router,
