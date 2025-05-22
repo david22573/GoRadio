@@ -1,26 +1,32 @@
 package app
 
 import (
+	"strconv"
+
 	"github.com/david22573/GoRadio/app/types"
 	"github.com/gin-gonic/gin"
 )
 
-type API struct {
+type APIHandler struct {
 	app *App
 }
 
-func (a *API) RegisterAPI() {
+func (a *APIHandler) RegisterAPI() {
 	api := a.app.Router.Group("/api")
 	{
+		api.GET("/ping", func(c *gin.Context) { c.JSON(200, gin.H{"message": "pong"}) })
 		api.GET("/stations", a.GetStations)
 		api.POST("/stations", a.CreateStation)
-		api.PUT("/stations/:id", a.CreateStation)
-		api.DELETE("/stations/:id", nil)
+		api.PUT("/stations/:id", a.UpdateStation)
+		api.DELETE("/stations/:id", a.DeleteStation)
 		api.GET("/shows", a.GetShows)
+		api.POST("/shows", a.CreateShow)
+		api.PUT("/shows/:id", a.UpdateShow)
+		api.DELETE("/shows/:id", a.DeleteShow)
 	}
 }
 
-func (a *API) GetStations(c *gin.Context) {
+func (a *APIHandler) GetStations(c *gin.Context) {
 	stations, err := a.app.Repo.GetAllStations()
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
@@ -29,7 +35,52 @@ func (a *API) GetStations(c *gin.Context) {
 	c.JSON(200, gin.H{"stations": stations})
 }
 
-func (a *API) GetShows(c *gin.Context) {
+func (a *APIHandler) CreateStation(c *gin.Context) {
+	var station types.Station
+	if err := c.Bind(&station); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	if err := a.app.Repo.CreateStation(&station); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(201, gin.H{"message": "Station created successfully"})
+}
+
+func (a *APIHandler) UpdateStation(c *gin.Context) {
+	var station types.Station
+	if err := c.Bind(&station); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	id, err := getUintParam(c, "id")
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	station.ID = id
+	if err := a.app.Repo.UpdateStation(&station); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"message": "Station updated successfully"})
+}
+
+func (a *APIHandler) DeleteStation(c *gin.Context) {
+	id, err := getUintParam(c, "id")
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	if err := a.app.Repo.DeleteStation(id); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"message": "Station deleted successfully"})
+}
+
+func (a *APIHandler) GetShows(c *gin.Context) {
 	shows, err := a.app.Repo.GetAllShows()
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
@@ -38,20 +89,56 @@ func (a *API) GetShows(c *gin.Context) {
 	c.JSON(200, gin.H{"shows": shows})
 }
 
-func (a *API) CreateStation(c *gin.Context) {
-
-	name := c.PostForm("name")
-	url := c.PostForm("url")
-
-	if name == "" || url == "" {
-		c.JSON(400, gin.H{"error": "name and url are required"})
+func (a *APIHandler) CreateShow(c *gin.Context) {
+	var show types.Show
+	if err := c.Bind(&show); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-
-	station := types.Station{Name: name, URL: url}
-	if err := a.app.Repo.CreateStation(&station); err != nil {
+	if err := a.app.Repo.CreateShow(&show); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(200, gin.H{"success": true})
+	c.JSON(201, gin.H{"message": "Show created successfully"})
+}
+
+func (a *APIHandler) UpdateShow(c *gin.Context) {
+	var show types.Show
+	if err := c.Bind(&show); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	id, err := getUintParam(c, "id")
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	show.ID = id
+	if err := a.app.Repo.UpdateShow(&show); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"message": "Show updated successfully"})
+}
+
+func (a *APIHandler) DeleteShow(c *gin.Context) {
+	id, err := getUintParam(c, "id")
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	if err := a.app.Repo.DeleteShow(id); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"message": "Show deleted successfully"})
+}
+
+func getUintParam(c *gin.Context, param string) (uint, error) {
+	idStr := c.Param(param)
+	idInt, err := strconv.Atoi(idStr)
+	if err != nil {
+		return 0, err
+	}
+	return uint(idInt), nil
 }

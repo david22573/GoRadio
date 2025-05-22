@@ -3,6 +3,7 @@ module github.com/david22573/GoRadio
 go 1.24.2
 
 require (
+	github.com/gin-contrib/static v1.1.5
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-co-op/gocron/v2 v2.16.1
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
