@@ -10,6 +10,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/david22573/GoRadio/app/db"
 	"github.com/david22573/GoRadio/app/store"
 	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
@@ -20,21 +21,33 @@ import (
 var staticFiles embed.FS
 
 type App struct {
-	Router     *gin.Engine
-	Repo       store.RadioRepository
+	Router *gin.Engine
+	Store  store.RadioActions
+
 	schedulers []gocron.Scheduler
 	mu         sync.Mutex
 	httpSrv    *http.Server
 }
 
-func NewApp(repo store.RadioRepository) (*App, error) {
+func NewApp(db db.Client) (*App, error) {
 	r := gin.Default()
 	return &App{
-		Router:     r,
-		Repo:       repo,
+		Router: r,
+		Store:  store.NewRadioStore(db),
+
 		schedulers: []gocron.Scheduler{},
 	}, nil
 }
+
+// if station, err := store.GetAllStations(); err == nil {
+// 	for _, s := range station {
+// 		scheduler, err := schedulers.NewRadioScheduler(app, s, nil)
+// 		if err != nil {
+// 			log.Fatal(err)
+// 		}
+// 		app.AddScheduler(scheduler)
+// 	}
+// }
 
 func (a *App) AddScheduler(sch gocron.Scheduler) {
 	a.mu.Lock()

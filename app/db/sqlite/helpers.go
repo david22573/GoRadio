@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/david22573/GoRadio/app/store"
 	"github.com/david22573/GoRadio/app/types"
 )
 
@@ -61,7 +60,7 @@ func querySingle[T any](
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
-	return nil, store.ErrNotFound
+	return nil, nil
 }
 
 // execInsert handles INSERT statements and returns the last inserted ID.
@@ -90,27 +89,23 @@ func scanShow(rows *sql.Rows) (types.Show, error) {
 	var s types.Show
 	var secs int64
 	var weekday int
-	var hour, min uint
 
 	err := rows.Scan(
 		&s.ID,
 		&s.Name,
 		&secs,
 		&weekday,
-		&hour,
-		&min,
+		&s.Hour,
+		&s.Min,
 		&s.Scheduled,
 		&s.StationID,
 	)
 	if err != nil {
 		return types.Show{}, err
 	}
-	s.Duration = time.Duration(secs) * time.Second
-	s.ShowSchedule = types.ShowSchedule{
-		Day:  time.Weekday(weekday),
-		Hour: hour,
-		Min:  min,
-	}
+	s.Duration = types.ShowDuration{Duration: time.Duration(secs) * time.Second}
+	s.Day = uint(weekday)
+
 	return s, nil
 }
 

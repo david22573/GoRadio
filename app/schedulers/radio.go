@@ -26,7 +26,7 @@ type RadioScheduler struct {
 
 // NewRadioScheduler creates a new RadioScheduler
 func NewRadioScheduler(app *app.App, station types.Station, loc *time.Location) (*RadioScheduler, error) {
-	shows, err := app.Repo.GetAllShowsByStation(station.ID)
+	shows, err := app.Store.GetAllShows()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get shows: %w", err)
 	}

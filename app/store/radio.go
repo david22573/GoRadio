@@ -1,98 +1,65 @@
-// File: app/store/radio.go
 package store
 
 import (
-	"errors" // For creating custom errors
-
+	"github.com/david22573/GoRadio/app/db"
 	"github.com/david22573/GoRadio/app/types"
 )
 
-// ErrNotFound is an error returned when a requested item is not found in the store.
-var ErrNotFound = errors.New("requested item not found")
-
-// RadioRepository defines the interface for radio data storage operations.
-type RadioRepository interface {
-	GetAllStations() ([]types.Station, error)
-	GetStationByID(id uint) (*types.Station, error)
-	GetStationByName(name string) (*types.Station, error)
-	CreateStation(station *types.Station) error
-	UpdateStation(station *types.Station) error
-	DeleteStation(id uint) error
-
-	GetAllShows() ([]types.Show, error)
-	GetAllShowsByStation(stationID uint) ([]types.Show, error)
-	GetShowByID(id uint) (*types.Show, error)
-	CreateShow(show *types.Show) error
-	UpdateShow(show *types.Show) error
-	DeleteShow(id uint) error
-
-	Close() error
+type radioStore struct {
+	dbClient db.Client
 }
 
-// RadioStore provides methods to interact with radio data, using a repository.
-type RadioStore struct {
-	repo RadioRepository
+func NewRadioStore(client db.Client) *radioStore {
+	return &radioStore{dbClient: client}
 }
 
-// NewRadioStore creates a new RadioStore.
-func NewRadioStore(repo RadioRepository) *RadioStore {
-	return &RadioStore{repo: repo}
+func (s *radioStore) GetAllStations() ([]types.Station, error) {
+	return s.dbClient.GetAllStations()
 }
 
-// GetAllStations retrieves all stations.
-func (s *RadioStore) GetAllStations() ([]types.Station, error) {
-	return s.repo.GetAllStations()
+func (s *radioStore) GetStationByID(id uint) (*types.Station, error) {
+	return s.dbClient.GetStationByID(id)
 }
 
-// GetStationByID retrieves a station by its ID.
-func (s *RadioStore) GetStationByID(id uint) (*types.Station, error) {
-	return s.repo.GetStationByID(id)
+func (s *radioStore) GetStationByName(name string) (*types.Station, error) {
+	return s.dbClient.GetStationByName(name)
 }
 
-func (s *RadioStore) GetStationByName(name string) (*types.Station, error) {
-	return s.repo.GetStationByName(name)
+func (s *radioStore) CreateStation(station types.Station) error {
+	return s.dbClient.CreateStation(station)
 }
 
-// CreateStation creates a new station.
-func (s *RadioStore) CreateStation(station *types.Station) error {
-	return s.repo.CreateStation(station)
+func (s *radioStore) UpdateStation(station *types.Station) error {
+	return s.dbClient.UpdateStation(station)
 }
 
-func (s *RadioStore) UpdateStation(station *types.Station) error {
-	return s.repo.UpdateStation(station)
+func (s *radioStore) DeleteStation(id uint) error {
+	return s.dbClient.DeleteStation(id)
 }
 
-// DeleteStation deletes a station by its ID.
-func (s *RadioStore) DeleteStation(id uint) error {
-	return s.repo.DeleteStation(id)
+func (s *radioStore) GetAllShows() ([]types.Show, error) {
+	return s.dbClient.GetAllShows()
 }
 
-// GetAllShows retrieves all shows.
-func (s *RadioStore) GetAllShows() ([]types.Show, error) {
-	return s.repo.GetAllShows()
+func (s *radioStore) GetShowByID(id uint) (*types.Show, error) {
+	return s.dbClient.GetShowByID(id)
+}
+func (s *radioStore) GetShowByName(name string) (*types.Show, error) {
+	return s.dbClient.GetShowByName(name)
 }
 
-// GetAllShowsByStation retrieves all shows for a given station ID.
-func (s *RadioStore) GetAllShowsByStation(stationID uint) ([]types.Show, error) {
-	return s.repo.GetAllShowsByStation(stationID)
+func (s *radioStore) CreateShow(show types.Show) error {
+	return s.dbClient.CreateShow(show)
 }
 
-// GetShowByID retrieves a show by its ID.
-func (s *RadioStore) GetShowByID(id uint) (*types.Show, error) {
-	return s.repo.GetShowByID(id)
+func (s *radioStore) UpdateShow(show *types.Show) error {
+	return s.dbClient.UpdateShow(show)
 }
 
-// CreateShow creates a new show.
-func (s *RadioStore) CreateShow(show *types.Show) error {
-	return s.repo.CreateShow(show)
+func (s *radioStore) DeleteShow(id uint) error {
+	return s.dbClient.DeleteShow(id)
 }
 
-// UpdateShow updates an existing show.
-func (s *RadioStore) UpdateShow(show *types.Show) error {
-	return s.repo.UpdateShow(show)
-}
-
-// DeleteShow deletes a show by its ID.
-func (s *RadioStore) DeleteShow(id uint) error {
-	return s.repo.DeleteShow(id)
+func (s *radioStore) Close() error {
+	return s.dbClient.Close()
 }
