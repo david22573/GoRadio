@@ -1,5 +1,3 @@
-// File: app/sqlite/client.go
-
 package sqlite
 
 import (
@@ -65,131 +63,60 @@ func migrate(db *sql.DB) error {
 	return err
 }
 
-// Implement db.Client methods:
-
 func (c *Client) GetAllStations() ([]types.Station, error) {
-	rows, err := c.db.Query("SELECT id, name, url FROM stations")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var stations []types.Station
-	for rows.Next() {
-		var s types.Station
-		if err := rows.Scan(&s.ID, &s.Name, &s.URL); err != nil {
-			return nil, err
-		}
-		stations = append(stations, s)
-	}
-	return stations, nil
+	return queryMultiple(c.db, scanStation, "SELECT id, name, url FROM stations")
 }
 
 func (c *Client) GetStationByID(id uint) (*types.Station, error) {
-	var s types.Station
-	err := c.db.QueryRow("SELECT id, name, url FROM stations WHERE id = ?", id).
-		Scan(&s.ID, &s.Name, &s.URL)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
-		return nil, err
-	}
-	return &s, nil
+	return querySingle(c.db, scanStation, "SELECT id, name, url FROM stations WHERE id = ?", id)
 }
 
 func (c *Client) GetStationByName(name string) (*types.Station, error) {
-	var s types.Station
-	err := c.db.QueryRow("SELECT id, name, url FROM stations WHERE name = ?", name).
-		Scan(&s.ID, &s.Name, &s.URL)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
-		return nil, err
-	}
-	return &s, nil
+	return querySingle(c.db, scanStation, "SELECT id, name, url FROM stations WHERE name = ?", name)
 }
 
 func (c *Client) CreateStation(station types.Station) error {
-	_, err := c.db.Exec("INSERT INTO stations (name, url) VALUES (?, ?)", station.Name, station.URL)
+	_, err := execInsert(c.db, "INSERT INTO stations (name, url) VALUES (?, ?)", station.Name, station.URL)
 	return err
 }
 
-func (c *Client) UpdateStation(show *types.Station) error {
-	_, err := c.db.Exec(`UPDATE shows SET name = ?, url = ? WHERE id = ?`,
-		show.Name, show.URL, show.ID)
+func (c *Client) UpdateStation(station *types.Station) error {
+	_, err := execAffected(c.db, "UPDATE stations SET name = ?, url = ? WHERE id = ?", station.Name, station.URL, station.ID)
 	return err
 }
 
 func (c *Client) DeleteStation(id uint) error {
-	_, err := c.db.Exec("DELETE FROM stations WHERE id = ?", id)
+	_, err := execAffected(c.db, "DELETE FROM stations WHERE id = ?", id)
 	return err
 }
 
 func (c *Client) GetAllShows() ([]types.Show, error) {
-	rows, err := c.db.Query("SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var shows []types.Show
-	for rows.Next() {
-		var s types.Show
-		var duration int64
-		if err := rows.Scan(&s.ID, &s.Name, &duration, &s.Day, &s.Hour, &s.Min, &s.Scheduled, &s.StationID); err != nil {
-			return nil, err
-		}
-		s.Duration = types.ShowDuration{Duration: time.Duration(duration) * time.Second}
-		shows = append(shows, s)
-	}
-	return shows, nil
+	return queryMultiple(c.db, scanShow, "SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows")
 }
 
 func (c *Client) GetShowByName(name string) (*types.Show, error) {
-	var s types.Show
-	var duration int64
-	err := c.db.QueryRow("SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows WHERE name = ?", name).
-		Scan(&s.ID, &s.Name, &duration, &s.Day, &s.Hour, &s.Min, &s.Scheduled, &s.StationID)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
-		return nil, err
-	}
-	s.Duration = types.ShowDuration{Duration: time.Duration(duration) * time.Second}
-
-	return &s, nil
+	return querySingle(c.db, scanShow, "SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows WHERE name = ?", name)
 }
 
 func (c *Client) GetShowByID(id uint) (*types.Show, error) {
-	var s types.Show
-	var duration int64
-	err := c.db.QueryRow("SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows WHERE id = ?", id).
-		Scan(&s.ID, &s.Name, &duration, &s.Day, &s.Hour, &s.Min, &s.Scheduled, &s.StationID)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
-		return nil, err
-	}
-	s.Duration = types.ShowDuration{Duration: time.Duration(duration) * time.Second}
-
-	return &s, nil
+	return querySingle(c.db, scanShow, "SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows WHERE id = ?", id)
 }
 
 func (c *Client) CreateShow(show types.Show) error {
-	_, err := c.db.Exec(`INSERT INTO shows (name, duration, day, hour, min, scheduled, station_id)
+	_, err := execInsert(c.db, `INSERT INTO shows (name, duration, day, hour, min, scheduled, station_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		show.Name, int64(show.Duration.Duration/time.Second), show.Day, show.Hour, show.Min, show.Scheduled, show.StationID)
 	return err
 }
 
 func (c *Client) UpdateShow(show *types.Show) error {
-	_, err := c.db.Exec(`UPDATE shows SET name = ?, duration = ?, day = ?, hour = ?, min = ?, scheduled = ?, station_id = ?
+	_, err := execAffected(c.db, `UPDATE shows SET name = ?, duration = ?, day = ?, hour = ?, min = ?, scheduled = ?, station_id = ?
 		WHERE id = ?`,
 		show.Name, int64(show.Duration.Duration/time.Second), show.Day, show.Hour, show.Min, show.Scheduled, show.StationID, show.ID)
 	return err
 }
 
 func (c *Client) DeleteShow(id uint) error {
-	_, err := c.db.Exec("DELETE FROM shows WHERE id = ?", id)
+	_, err := execAffected(c.db, "DELETE FROM shows WHERE id = ?", id)
 	return err
 }
