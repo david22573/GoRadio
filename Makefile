@@ -4,7 +4,7 @@ build:
 run:
 	@bin/GoRadio
 
-run-web:
+dev:
 	@cd frontend && npm run dev
 
 build-web:

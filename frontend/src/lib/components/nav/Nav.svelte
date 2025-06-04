@@ -3,6 +3,6 @@
 	let props = $props();
 </script>
 
-<nav class="p-4">
+<nav class="flex items-center justify-between">
 	<Logo />
 </nav>

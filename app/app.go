@@ -73,8 +73,9 @@ func (a *App) StopSchedulers() {
 
 func (a *App) Run(addr string) error {
 	a.StartSchedulers()
-
+	api := &APIHandler{a}
 	r := a.Router
+	api.RegisterAPI()
 
 	staticFS, err := static.EmbedFolder(staticFiles, "static")
 

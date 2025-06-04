@@ -4,6 +4,8 @@
 	let { children } = $props();
 </script>
 
-<Nav />
+<div class="flex flex-col min-h-screen size-full p-4">
+	<Nav />
 
-{@render children?.()}
+	{@render children?.()}
+</div>
