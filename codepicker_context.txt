@@ -1,4 +1,4 @@
-Project Context Dump (31 Mar 26 04:06 UTC)
+Project Context Dump (01 Apr 26 10:41 PDT)
 Format: xml
 Mode: FULL (No Truncation)
 Total Files: 24
@@ -6,34 +6,36 @@ Total Files: 24
 # Project Structure
 <file_tree>
 - Makefile
-- app/api.go
-- app/app.go
-- app/clients/radio.go
-- app/db/client.go
-- app/db/sqlite/helpers.go
-- app/db/sqlite/sqlite.go
-- app/db/sqlite/sqlite_test.go
-- app/schedulers/counter.go
-- app/schedulers/radio.go
-- app/store/actions.go
-- app/store/radio.go
-- app/types/radio.go
-- app/types/show.go
-- cmd/app/main.go
-- frontend/src/app.css
-- frontend/src/app.html
-- frontend/src/lib/components/nav/Logo.svelte
-- frontend/src/lib/components/nav/Nav.svelte
-- frontend/src/lib/index.js
-- frontend/src/routes/+layout.svelte
-- frontend/src/routes/+page.js
-- frontend/src/routes/+page.svelte
-- frontend/vitest-setup-client.js
+- app\api.go
+- app\app.go
+- app\clients\radio.go
+- app\db\client.go
+- app\db\sqlite\helpers.go
+- app\db\sqlite\sqlite.go
+- app\db\sqlite\sqlite_test.go
+- app\schedulers\counter.go
+- app\schedulers\radio.go
+- app\store\actions.go
+- app\store\radio.go
+- app\types\radio.go
+- app\types\show.go
+- cmd\app\main.go
+- frontend\src\app.css
+- frontend\src\app.html
+- frontend\src\lib\components\nav\Logo.svelte
+- frontend\src\lib\components\nav\Nav.svelte
+- frontend\src\lib\index.js
+- frontend\src\routes\+layout.svelte
+- frontend\src\routes\+page.js
+- frontend\src\routes\+page.svelte
+- frontend\vitest-setup-client.js
 </file_tree>
 
 # File Contents
 <file path="Makefile">
 build:
+	@mkdir -p app/static
+	@touch app/static/.gitkeep
 	@go build -o bin/GoRadio ./cmd/app/main.go
 
 run:
@@ -43,6 +45,7 @@ dev:
 	@cd frontend && npm run dev
 
 build-web:
+	@mkdir -p app/static
 	@cd frontend && npm run build
 	@cp -rf frontend/build/* app/static
 
@@ -50,9 +53,10 @@ buildr:
 	@make build
 	@make run
 
+
 </file>
 
-<file path="app/api.go">
+<file path="app\api.go">
 package app
 
 import (
@@ -82,7 +86,7 @@ func (a *APIHandler) RegisterAPI() {
 }
 
 func (a *APIHandler) GetStations(c *gin.Context) {
-	stations, err := a.app.Store.GetAllStations()
+	stations, err := a.app.DB.GetAllStations()
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -96,7 +100,7 @@ func (a *APIHandler) CreateStation(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	if err := a.app.Store.CreateStation(station); err != nil {
+	if err := a.app.DB.CreateStation(station); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -115,7 +119,7 @@ func (a *APIHandler) UpdateStation(c *gin.Context) {
 		return
 	}
 	station.ID = id
-	if err := a.app.Store.UpdateStation(&station); err != nil {
+	if err := a.app.DB.UpdateStation(&station); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -128,7 +132,7 @@ func (a *APIHandler) DeleteStation(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	if err := a.app.Store.DeleteStation(id); err != nil {
+	if err := a.app.DB.DeleteStation(id); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -136,7 +140,7 @@ func (a *APIHandler) DeleteStation(c *gin.Context) {
 }
 
 func (a *APIHandler) GetShows(c *gin.Context) {
-	shows, err := a.app.Store.GetAllShows()
+	shows, err := a.app.DB.GetAllShows()
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -150,7 +154,7 @@ func (a *APIHandler) CreateShow(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	if err := a.app.Store.CreateShow(show); err != nil {
+	if err := a.app.DB.CreateShow(show); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -169,7 +173,7 @@ func (a *APIHandler) UpdateShow(c *gin.Context) {
 		return
 	}
 	show.ID = id
-	if err := a.app.Store.UpdateShow(&show); err != nil {
+	if err := a.app.DB.UpdateShow(&show); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -182,7 +186,7 @@ func (a *APIHandler) DeleteShow(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	if err := a.app.Store.DeleteShow(id); err != nil {
+	if err := a.app.DB.DeleteShow(id); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -200,10 +204,11 @@ func getUintParam(c *gin.Context, param string) (uint, error) {
 
 </file>
 
-<file path="app/app.go">
+<file path="app\app.go">
 package app
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"log"
@@ -214,43 +219,38 @@ import (
 	"syscall"
 
 	"github.com/david22573/GoRadio/app/db"
-	"github.com/david22573/GoRadio/app/store"
 	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/go-co-op/gocron/v2"
 )
 
-//go:embed static/*
+//go:embed all:static
 var staticFiles embed.FS
 
 type App struct {
 	Router *gin.Engine
-	Store  store.RadioActions
+	DB     db.Client
+	Ctx    context.Context
+	cancel context.CancelFunc
 
 	schedulers []gocron.Scheduler
 	mu         sync.Mutex
 	httpSrv    *http.Server
 }
 
-func NewApp(db db.Client) (*App, error) {
+func NewApp(database db.Client) (*App, error) {
 	r := gin.Default()
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &App{
 		Router: r,
-		Store:  store.NewRadioStore(db),
+		DB:     database,
+		Ctx:    ctx,
+		cancel: cancel,
 
 		schedulers: []gocron.Scheduler{},
 	}, nil
 }
-
-// if station, err := store.GetAllStations(); err == nil {
-// 	for _, s := range station {
-// 		scheduler, err := schedulers.NewRadioScheduler(app, s, nil)
-// 		if err != nil {
-// 			log.Fatal(err)
-// 		}
-// 		app.AddScheduler(scheduler)
-// 	}
-// }
 
 func (a *App) AddScheduler(sch gocron.Scheduler) {
 	a.mu.Lock()
@@ -281,7 +281,6 @@ func (a *App) Run(addr string) error {
 	api.RegisterAPI()
 
 	staticFS, err := static.EmbedFolder(staticFiles, "static")
-
 	if err != nil {
 		return err
 	}
@@ -289,7 +288,7 @@ func (a *App) Run(addr string) error {
 	r.GET("/ping", func(c *gin.Context) { c.JSON(200, gin.H{"message": "pong"}) })
 
 	r.Use(static.Serve("/", staticFS))
-	// Or if you need SPA fallback for client-side routing:
+	// SPA fallback for client-side routing
 	r.NoRoute(func(c *gin.Context) {
 		c.File("app/static/index.html")
 	})
@@ -315,23 +314,27 @@ func (a *App) Run(addr string) error {
 	case err := <-errChan:
 		if err != nil && err != http.ErrServerClosed {
 			log.Printf("HTTP server error: %v", err)
+			a.cancel()
 			a.StopSchedulers()
 			return err
 		}
 		log.Println("HTTP server exited cleanly.")
 	}
 
+	// Cancel the context to kill any running FFMPEG processes
+	a.cancel()
 	a.StopSchedulers()
-	log.Println("Schedulers stopped.")
+	log.Println("Schedulers stopped and child processes killed.")
 	return nil
 }
 
 </file>
 
-<file path="app/clients/radio.go">
+<file path="app\clients\radio.go">
 package clients
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -362,11 +365,12 @@ func NewRadioClient(rootFolder, radioURL string) *RadioClient {
 }
 
 // Record uses ffmpeg to record the stream for show.Duration.
-func (rc *RadioClient) Record(show *types.Show) error {
+func (rc *RadioClient) Record(ctx context.Context, show *types.Show) error {
 	// timestamped filename
 	ts := time.Now().Format("2006-01-02")
 	filename := fmt.Sprintf("%s_%s.aac", show.Name, ts)
 	showDir := filepath.Join(rc.outputPath, show.Name)
+
 	if err := os.MkdirAll(showDir, os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create show folder: %w", err)
 	}
@@ -376,23 +380,26 @@ func (rc *RadioClient) Record(show *types.Show) error {
 	args := []string{
 		"-i", rc.url,
 		"-t", strconv.Itoa(int(show.Duration.Seconds())),
-		"-c",
-		"copy",
+		"-c", "copy",
 		outPath,
 	}
 
-	currDir := exec.Command("explorer .")
-	currDir.Run()
-
 	log.Printf("▶️  Recording %s for %v → %s\n", show.Name, show.Duration, outPath)
-	cmd := exec.Command("ffmpeg", args...)
+
+	// CommandContext ties the ffmpeg process to the application lifecycle
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start ffmpeg: %w", err)
 	}
+
 	if err := cmd.Wait(); err != nil {
+		// If the context was canceled, we expect an error here, so just log it cleanly
+		if ctx.Err() == context.Canceled {
+			return fmt.Errorf("recording aborted for %s (app shutdown)", show.Name)
+		}
 		return fmt.Errorf("ffmpeg exited with error: %w", err)
 	}
 
@@ -402,7 +409,7 @@ func (rc *RadioClient) Record(show *types.Show) error {
 
 </file>
 
-<file path="app/db/client.go">
+<file path="app\db\client.go">
 package db
 
 import "github.com/david22573/GoRadio/app/types"
@@ -429,7 +436,7 @@ type Client interface {
 
 </file>
 
-<file path="app/db/sqlite/helpers.go">
+<file path="app\db\sqlite\helpers.go">
 package sqlite
 
 import (
@@ -553,7 +560,7 @@ func scanStation(rows *sql.Rows) (types.Station, error) {
 
 </file>
 
-<file path="app/db/sqlite/sqlite.go">
+<file path="app\db\sqlite\sqlite.go">
 package sqlite
 
 import (
@@ -679,7 +686,7 @@ func (c *Client) DeleteShow(id uint) error {
 
 </file>
 
-<file path="app/db/sqlite/sqlite_test.go">
+<file path="app\db\sqlite\sqlite_test.go">
 package sqlite_test
 
 import (
@@ -796,20 +803,22 @@ func TestShowCRUD(t *testing.T) {
 
 </file>
 
-<file path="app/schedulers/counter.go">
+<file path="app\schedulers\counter.go">
 package schedulers
 
 </file>
 
-<file path="app/schedulers/radio.go">
+<file path="app\schedulers\radio.go">
 package schedulers
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/david22573/GoRadio/app"
+	"github.com/david22573/GoRadio/app/clients"
 	"github.com/david22573/GoRadio/app/types"
 	"github.com/go-co-op/gocron/v2"
 )
@@ -817,9 +826,10 @@ import (
 // RadioScheduler embeds gocron.Scheduler for scheduler functionality
 // while adding radio-specific state
 type RadioScheduler struct {
-	Name  string
-	URL   string
-	Shows []types.Show
+	StationID uint
+	Name      string
+	URL       string
+	Shows     []types.Show
 
 	app  *app.App
 	jobs map[uint]gocron.Job
@@ -829,8 +839,8 @@ type RadioScheduler struct {
 }
 
 // NewRadioScheduler creates a new RadioScheduler
-func NewRadioScheduler(app *app.App, station types.Station, loc *time.Location) (*RadioScheduler, error) {
-	shows, err := app.Store.GetAllShows()
+func NewRadioScheduler(application *app.App, station types.Station, loc *time.Location) (*RadioScheduler, error) {
+	shows, err := application.DB.GetAllShows()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get shows: %w", err)
 	}
@@ -853,11 +863,12 @@ func NewRadioScheduler(app *app.App, station types.Station, loc *time.Location) 
 
 	// Create the radio scheduler with embedding
 	rs := &RadioScheduler{
-		Name:  station.Name,
-		URL:   station.URL,
-		Shows: shows,
+		StationID: station.ID,
+		Name:      station.Name,
+		URL:       station.URL,
+		Shows:     shows,
 
-		app:       app,
+		app:       application,
 		jobs:      jobs,
 		Scheduler: scheduler, // Assign the created scheduler to the embedded field
 	}
@@ -875,16 +886,19 @@ func NewRadioScheduler(app *app.App, station types.Station, loc *time.Location) 
 }
 
 func (r *RadioScheduler) Start() {
-	fmt.Println("Starting radio scheduler...")
+	fmt.Printf("Starting radio scheduler for %s...\n", r.Name)
 	r.Scheduler.Start()
 }
 
 // scheduleShows adds all shows to the scheduler
 func (s *RadioScheduler) scheduleShows() error {
 	for i, show := range s.Shows {
-		show := show // shadow to close properly
-		if err := s.ScheduleShow(show); err != nil {
-			return fmt.Errorf("failed to schedule show %d (%s): %w", i, show.Name, err)
+		// Only schedule shows belonging to this specific station
+		if show.StationID == s.StationID {
+			show := show // shadow to close properly
+			if err := s.ScheduleShow(show); err != nil {
+				return fmt.Errorf("failed to schedule show %d (%s): %w", i, show.Name, err)
+			}
 		}
 	}
 	return nil
@@ -893,9 +907,18 @@ func (s *RadioScheduler) scheduleShows() error {
 // ScheduleShow adds a single show to the scheduler
 func (s *RadioScheduler) ScheduleShow(show types.Show) error {
 	jobDef := gocron.DailyJob(1, gocron.NewAtTimes(gocron.NewAtTime(show.StartTime())))
+
 	task := gocron.NewTask(func() {
-		// … run the show …
+		// Fire and forget in a goroutine so cmd.Wait() doesn't block gocron
+		go func(targetShow types.Show) {
+			client := clients.NewRadioClient("data/recordings", s.URL)
+			// Pass the global application context here
+			if err := client.Record(s.app.Ctx, &targetShow); err != nil {
+				log.Printf("Recording failed for show %s: %v", targetShow.Name, err)
+			}
+		}(show)
 	})
+
 	job, err := s.NewJob(jobDef, task)
 	if err != nil {
 		return err
@@ -913,7 +936,7 @@ func (s *RadioScheduler) CancelShow(showID uint) error {
 	job, ok := s.jobs[showID]
 	s.mu.Unlock()
 	if !ok {
-		return fmt.Errorf("no job found for show %q", showID)
+		return fmt.Errorf("no job found for show %d", showID)
 	}
 	s.mu.Lock()
 	delete(s.jobs, showID)
@@ -923,7 +946,7 @@ func (s *RadioScheduler) CancelShow(showID uint) error {
 
 </file>
 
-<file path="app/store/actions.go">
+<file path="app\store\actions.go">
 package store
 
 import "github.com/david22573/GoRadio/app/types"
@@ -949,7 +972,7 @@ type RadioActions interface {
 
 </file>
 
-<file path="app/store/radio.go">
+<file path="app\store\radio.go">
 package store
 
 import (
@@ -1018,7 +1041,7 @@ func (s *radioStore) Close() error {
 
 </file>
 
-<file path="app/types/radio.go">
+<file path="app\types\radio.go">
 package types
 
 type Station struct {
@@ -1029,7 +1052,7 @@ type Station struct {
 
 </file>
 
-<file path="app/types/show.go">
+<file path="app\types\show.go">
 package types
 
 import (
@@ -1058,11 +1081,10 @@ func (s *Show) GetSchedule() ShowSchedule {
 	return ShowSchedule{Day: time.Weekday(s.Day), Hour: s.Hour, Min: s.Min}
 }
 
-func (s *Show) UpdateSchdule(schedule ShowSchedule) {
+func (s *Show) UpdateSchedule(schedule ShowSchedule) {
 	s.Day = uint(schedule.Day)
 	s.Hour = schedule.Hour
 	s.Min = schedule.Min
-	return
 }
 
 func (s Show) StartTime() (uint, uint, uint) {
@@ -1091,7 +1113,7 @@ func (s *ShowDuration) UnmarshalJSON(b []byte) error {
 
 </file>
 
-<file path="cmd/app/main.go">
+<file path="cmd\app\main.go">
 package main
 
 import (
@@ -1099,6 +1121,7 @@ import (
 
 	"github.com/david22573/GoRadio/app"
 	"github.com/david22573/GoRadio/app/db/sqlite"
+	"github.com/david22573/GoRadio/app/schedulers"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -1107,28 +1130,42 @@ func main() {
 		Filename:   "GoRadio.log",
 		MaxSize:    500, // megabytes
 		MaxBackups: 3,
-		MaxAge:     28,   //days
-		Compress:   true, // disabled by default
+		MaxAge:     28, // days
+		Compress:   true,
 	})
+
 	db, err := sqlite.NewSQLiteClient("radio.db")
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	application, err := app.NewApp(db)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	app, err := app.NewApp(db)
-	if err != nil {
-		log.Fatal(err)
+	stations, err := db.GetAllStations()
+	if err == nil {
+		for _, s := range stations {
+			scheduler, err := schedulers.NewRadioScheduler(application, s, nil)
+			if err != nil {
+				log.Printf("Failed to create scheduler for station %s: %v", s.Name, err)
+				continue
+			}
+			application.AddScheduler(scheduler)
+		}
+	} else {
+		log.Printf("Could not load stations for scheduling: %v", err)
 	}
 
-	app.Run(":8000")
+	if err := application.Run(":8000"); err != nil {
+		log.Fatal(err)
+	}
 }
 
 </file>
 
-<file path="frontend/src/app.css">
+<file path="frontend\src\app.css">
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -1142,7 +1179,7 @@ body {
 }
 </file>
 
-<file path="frontend/src/app.html">
+<file path="frontend\src\app.html">
 <!doctype html>
 <html lang="en">
 
@@ -1166,7 +1203,7 @@ body {
 </html>
 </file>
 
-<file path="frontend/src/lib/components/nav/Logo.svelte">
+<file path="frontend\src\lib\components\nav\Logo.svelte">
 <a href="/" class="flex items-center">
 	<div class="flex bg-white w-fit p-2 rounded-lg">
 		<img src="/logo.svg" alt="GoRadio" class="h-10 md:h-14 mr-3" />
@@ -1177,7 +1214,7 @@ body {
 
 </file>
 
-<file path="frontend/src/lib/components/nav/Nav.svelte">
+<file path="frontend\src\lib\components\nav\Nav.svelte">
 <script>
 	import Logo from './Logo.svelte';
 	let props = $props();
@@ -1189,12 +1226,12 @@ body {
 
 </file>
 
-<file path="frontend/src/lib/index.js">
+<file path="frontend\src\lib\index.js">
 // place files you want to import through the `$lib` alias in this folder.
 
 </file>
 
-<file path="frontend/src/routes/+layout.svelte">
+<file path="frontend\src\routes\+layout.svelte">
 <script>
 	import '../app.css';
 	import Nav from '$lib/components/nav/Nav.svelte';
@@ -1209,7 +1246,7 @@ body {
 
 </file>
 
-<file path="frontend/src/routes/+page.js">
+<file path="frontend\src\routes\+page.js">
 export const load = async ({ fetch }) => {
 	try {
 		const res = await fetch('/api/stations');
@@ -1222,21 +1259,212 @@ export const load = async ({ fetch }) => {
 
 </file>
 
-<file path="frontend/src/routes/+page.svelte">
+<file path="frontend\src\routes\+page.svelte">
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
+
 	let { data } = $props();
+
+	// Search State
+	let searchQuery = $state('');
+	let searchResults = $state<any[]>([]);
+	let isSearching = $state(false);
+
+	// Custom Add State
+	let customName = $state('');
+	let customUrl = $state('');
+	let isSubmitting = $state(false);
+
+	async function searchStations(e: Event) {
+		e.preventDefault();
+		if (!searchQuery) return;
+
+		isSearching = true;
+		try {
+			// Using one of the main community nodes, filtering out broken streams
+			const res = await fetch(
+				`https://de1.api.radio-browser.info/json/stations/search?name=${encodeURIComponent(searchQuery)}&limit=12&hidebroken=true`
+			);
+			searchResults = await res.json();
+		} catch (err) {
+			console.error(err);
+			alert('Failed to fetch from Radio-Browser');
+		} finally {
+			isSearching = false;
+		}
+	}
+
+	async function addFromSearch(result: any) {
+		try {
+			// url_resolved is better because it bypasses redirects
+			const res = await fetch('/api/stations', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: result.name, url: result.url_resolved || result.url })
+			});
+
+			if (res.ok) {
+				await invalidateAll();
+			} else {
+				const err = await res.json();
+				alert('Error adding station: ' + err.error);
+			}
+		} catch (err) {
+			console.error(err);
+		}
+	}
+
+	async function addCustomStation(e: Event) {
+		e.preventDefault();
+		if (!customName || !customUrl) return;
+
+		isSubmitting = true;
+		try {
+			const res = await fetch('/api/stations', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: customName, url: customUrl })
+			});
+
+			if (res.ok) {
+				customName = '';
+				customUrl = '';
+				await invalidateAll();
+			} else {
+				const err = await res.json();
+				alert('Error adding station: ' + err.error);
+			}
+		} catch (err) {
+			console.error(err);
+		} finally {
+			isSubmitting = false;
+		}
+	}
+
+	async function deleteStation(id: number) {
+		if (!confirm('Delete this station?')) return;
+
+		try {
+			const res = await fetch(`/api/stations/${id}`, { method: 'DELETE' });
+			if (res.ok) {
+				await invalidateAll();
+			} else {
+				const err = await res.json();
+				alert('Error deleting station: ' + err.error);
+			}
+		} catch (err) {
+			console.error(err);
+		}
+	}
 </script>
 
-{#each data.stations as station}
-	<div class="flex items-center gap-4">
-		<a href="/radio/{station.id}">{JSON.stringify(station, null, 2)}</a>
-		<audio src={station.url} controls> </audio>
-	</div>
-{/each}
+<div class="max-w-6xl mx-auto space-y-12 mt-8 px-4 pb-12">
+	<section>
+		<h2 class="text-3xl font-bold mb-6 text-sky-400">Your Stations</h2>
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+			{#if data.stations && data.stations.length > 0}
+				{#each data.stations as station}
+					<div
+						class="bg-zinc-800 p-5 rounded-xl shadow-lg border border-zinc-700 flex flex-col gap-4"
+					>
+						<div class="flex justify-between items-start">
+							<h3 class="text-xl font-bold truncate pr-4 text-zinc-100">{station.name}</h3>
+							<button
+								onclick={() => deleteStation(station.id)}
+								class="text-red-400 hover:text-red-300 text-sm font-medium transition-colors"
+							>
+								Delete
+							</button>
+						</div>
+						<audio src={station.url} controls class="w-full h-10 rounded outline-none"></audio>
+					</div>
+				{/each}
+			{:else}
+				<div
+					class="col-span-full text-center py-12 text-zinc-500 bg-zinc-800/50 rounded-xl border border-zinc-700 border-dashed"
+				>
+					No saved stations yet. Search below to add some.
+				</div>
+			{/if}
+		</div>
+	</section>
+
+	<section class="bg-zinc-800 p-6 rounded-xl shadow-lg border border-zinc-700">
+		<h2 class="text-2xl font-bold mb-4 text-sky-400">Discover Stations</h2>
+		<form onsubmit={searchStations} class="flex flex-col md:flex-row gap-4 mb-6">
+			<input
+				type="text"
+				bind:value={searchQuery}
+				placeholder="Search by name, genre, or location..."
+				class="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:border-sky-500 text-white"
+				required
+			/>
+			<button
+				type="submit"
+				disabled={isSearching}
+				class="bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2 px-6 rounded-lg transition-colors disabled:opacity-50"
+			>
+				{isSearching ? 'Searching...' : 'Search'}
+			</button>
+		</form>
+
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+			{#each searchResults as result}
+				<div class="bg-zinc-900 p-4 rounded-lg border border-zinc-700 flex flex-col gap-3">
+					<div class="flex justify-between items-start gap-2">
+						<div class="overflow-hidden">
+							<h3 class="font-bold text-zinc-100 truncate" title={result.name}>{result.name}</h3>
+							<p class="text-xs text-zinc-400 truncate">{result.tags || 'No tags'}</p>
+						</div>
+						<button
+							onclick={() => addFromSearch(result)}
+							class="shrink-0 bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium py-1.5 px-3 rounded transition-colors"
+						>
+							Add +
+						</button>
+					</div>
+					<audio
+						src={result.url_resolved || result.url}
+						controls
+						preload="none"
+						class="w-full h-8 rounded outline-none"
+					></audio>
+				</div>
+			{/each}
+		</div>
+	</section>
+
+	<section class="bg-zinc-800/50 p-6 rounded-xl shadow border border-zinc-700 border-dashed">
+		<h3 class="text-lg font-bold mb-4 text-zinc-300">Add via Custom URL</h3>
+		<form onsubmit={addCustomStation} class="flex flex-col md:flex-row gap-4">
+			<input
+				type="text"
+				bind:value={customName}
+				placeholder="Station Name"
+				class="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:border-sky-500 text-white"
+				required
+			/>
+			<input
+				type="url"
+				bind:value={customUrl}
+				placeholder="Stream URL (http://...)"
+				class="flex-[2] bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:border-sky-500 text-white"
+				required
+			/>
+			<button
+				type="submit"
+				disabled={isSubmitting}
+				class="bg-zinc-700 hover:bg-zinc-600 text-white font-medium py-2 px-6 rounded-lg transition-colors disabled:opacity-50"
+			>
+				{isSubmitting ? 'Adding...' : 'Add'}
+			</button>
+		</form>
+	</section>
+</div>
 
 </file>
 
-<file path="frontend/vitest-setup-client.js">
+<file path="frontend\vitest-setup-client.js">
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 
@@ -1262,10 +1490,10 @@ Object.defineProperty(window, 'matchMedia', {
 
 ```json
 {
-  "total_bytes": 26880,
+  "total_bytes": 35354,
   "file_count": 24,
-  "estimated_tokens": 7188,
+  "estimated_tokens": 9306,
   "mode": "full",
-  "generated_at": "2026-03-31T04:06:20.725779583Z"
+  "generated_at": "2026-04-01T10:41:21.8060276-07:00"
 }
 ```

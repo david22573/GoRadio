@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import StationCard from '$lib/components/StationCard.svelte';
+	import DiscoverCard from '$lib/components/DiscoverCard.svelte';
 
 	let { data } = $props();
 
@@ -19,14 +21,12 @@
 
 		isSearching = true;
 		try {
-			// Using one of the main community nodes, filtering out broken streams
-			const res = await fetch(
-				`https://de1.api.radio-browser.info/json/stations/search?name=${encodeURIComponent(searchQuery)}&limit=12&hidebroken=true`
-			);
+			const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
+			if (!res.ok) throw new Error('Search failed');
 			searchResults = await res.json();
 		} catch (err) {
 			console.error(err);
-			alert('Failed to fetch from Radio-Browser');
+			alert('Failed to fetch stations');
 		} finally {
 			isSearching = false;
 		}
@@ -34,13 +34,11 @@
 
 	async function addFromSearch(result: any) {
 		try {
-			// url_resolved is better because it bypasses redirects
 			const res = await fetch('/api/stations', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name: result.name, url: result.url_resolved || result.url })
 			});
-
 			if (res.ok) {
 				await invalidateAll();
 			} else {
@@ -63,7 +61,6 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name: customName, url: customUrl })
 			});
-
 			if (res.ok) {
 				customName = '';
 				customUrl = '';
@@ -96,106 +93,124 @@
 	}
 </script>
 
-<div class="max-w-6xl mx-auto space-y-12 mt-8 px-4 pb-12">
+<div class="max-w-7xl mx-auto space-y-16 mt-8 px-8 pb-12">
 	<section>
-		<h2 class="text-3xl font-bold mb-6 text-sky-400">Your Stations</h2>
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+		<div class="flex items-center justify-between mb-8">
+			<h2 class="font-headline text-3xl md:text-4xl font-extrabold tracking-tighter text-white">
+				Your Frequencies
+			</h2>
+			<span
+				class="px-4 py-1.5 rounded-full bg-surface-container-highest text-primary font-label text-xs font-bold uppercase tracking-widest border border-outline-variant/10"
+			>
+				{data.stations?.length || 0} Saved
+			</span>
+		</div>
+
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 			{#if data.stations && data.stations.length > 0}
-				{#each data.stations as station}
-					<div
-						class="bg-zinc-800 p-5 rounded-xl shadow-lg border border-zinc-700 flex flex-col gap-4"
-					>
-						<div class="flex justify-between items-start">
-							<h3 class="text-xl font-bold truncate pr-4 text-zinc-100">{station.name}</h3>
-							<button
-								onclick={() => deleteStation(station.id)}
-								class="text-red-400 hover:text-red-300 text-sm font-medium transition-colors"
-							>
-								Delete
-							</button>
-						</div>
-						<audio src={station.url} controls class="w-full h-10 rounded outline-none"></audio>
-					</div>
+				{#each data.stations as station (station.id)}
+					<StationCard {station} onDelete={deleteStation} />
 				{/each}
 			{:else}
 				<div
-					class="col-span-full text-center py-12 text-zinc-500 bg-zinc-800/50 rounded-xl border border-zinc-700 border-dashed"
+					class="col-span-full flex flex-col items-center justify-center py-20 text-center bg-surface-container-low rounded-3xl border border-outline-variant/10 border-dashed"
 				>
-					No saved stations yet. Search below to add some.
+					<span class="material-symbols-outlined text-6xl text-on-surface-variant mb-4 opacity-50"
+						>sensors_off</span
+					>
+					<h3 class="text-xl font-bold text-white mb-2">No stations tuned in</h3>
+					<p class="text-on-surface-variant max-w-sm">
+						Use the search below to discover global broadcasts or manually add a direct stream URL.
+					</p>
 				</div>
 			{/if}
 		</div>
 	</section>
 
-	<section class="bg-zinc-800 p-6 rounded-xl shadow-lg border border-zinc-700">
-		<h2 class="text-2xl font-bold mb-4 text-sky-400">Discover Stations</h2>
-		<form onsubmit={searchStations} class="flex flex-col md:flex-row gap-4 mb-6">
-			<input
-				type="text"
-				bind:value={searchQuery}
-				placeholder="Search by name, genre, or location..."
-				class="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:border-sky-500 text-white"
-				required
-			/>
-			<button
-				type="submit"
-				disabled={isSearching}
-				class="bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2 px-6 rounded-lg transition-colors disabled:opacity-50"
-			>
-				{isSearching ? 'Searching...' : 'Search'}
-			</button>
-		</form>
+	<section
+		class="p-8 rounded-3xl bg-surface-container-low border border-outline-variant/10 shadow-2xl shadow-black/50 relative overflow-hidden"
+	>
+		<div
+			class="absolute -top-32 -right-32 w-96 h-96 bg-primary/5 rounded-full blur-[100px] pointer-events-none"
+		></div>
 
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-			{#each searchResults as result}
-				<div class="bg-zinc-900 p-4 rounded-lg border border-zinc-700 flex flex-col gap-3">
-					<div class="flex justify-between items-start gap-2">
-						<div class="overflow-hidden">
-							<h3 class="font-bold text-zinc-100 truncate" title={result.name}>{result.name}</h3>
-							<p class="text-xs text-zinc-400 truncate">{result.tags || 'No tags'}</p>
-						</div>
-						<button
-							onclick={() => addFromSearch(result)}
-							class="shrink-0 bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium py-1.5 px-3 rounded transition-colors"
-						>
-							Add +
-						</button>
-					</div>
-					<audio
-						src={result.url_resolved || result.url}
-						controls
-						preload="none"
-						class="w-full h-8 rounded outline-none"
-					></audio>
+		<div class="relative z-10">
+			<h2
+				class="font-headline text-3xl font-extrabold tracking-tighter mb-6 text-white flex items-center gap-3"
+			>
+				<span class="material-symbols-outlined text-primary">explore</span>
+				Discover
+			</h2>
+
+			<form onsubmit={searchStations} class="flex flex-col md:flex-row gap-4 mb-8">
+				<div class="relative flex-1">
+					<span
+						class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant"
+						>search</span
+					>
+					<input
+						type="text"
+						bind:value={searchQuery}
+						placeholder="Search by genre, callsign, or city..."
+						class="w-full bg-surface-container-highest border border-outline-variant/20 rounded-xl py-4 pl-12 pr-4 text-sm focus:ring-2 focus:ring-primary text-white focus:outline-none transition-all"
+						required
+					/>
 				</div>
-			{/each}
+				<button
+					type="submit"
+					disabled={isSearching}
+					class="bg-white hover:bg-gray-200 text-black font-headline font-bold py-4 px-8 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+				>
+					{isSearching ? 'Scanning...' : 'Scan Airways'}
+					{#if !isSearching}
+						<span class="material-symbols-outlined text-sm">radar</span>
+					{/if}
+				</button>
+			</form>
+
+			{#if searchResults.length > 0}
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+					{#each searchResults as result (result.stationuuid)}
+						<DiscoverCard {result} {onAdd} />
+					{/each}
+				</div>
+			{/if}
 		</div>
 	</section>
 
-	<section class="bg-zinc-800/50 p-6 rounded-xl shadow border border-zinc-700 border-dashed">
-		<h3 class="text-lg font-bold mb-4 text-zinc-300">Add via Custom URL</h3>
-		<form onsubmit={addCustomStation} class="flex flex-col md:flex-row gap-4">
-			<input
-				type="text"
-				bind:value={customName}
-				placeholder="Station Name"
-				class="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:border-sky-500 text-white"
-				required
-			/>
-			<input
-				type="url"
-				bind:value={customUrl}
-				placeholder="Stream URL (http://...)"
-				class="flex-[2] bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:border-sky-500 text-white"
-				required
-			/>
-			<button
-				type="submit"
-				disabled={isSubmitting}
-				class="bg-zinc-700 hover:bg-zinc-600 text-white font-medium py-2 px-6 rounded-lg transition-colors disabled:opacity-50"
-			>
-				{isSubmitting ? 'Adding...' : 'Add'}
-			</button>
-		</form>
+	<section class="p-8 rounded-3xl bg-surface-container border border-outline-variant/10">
+		<div class="max-w-3xl">
+			<h3 class="font-headline text-xl font-bold mb-2 text-white flex items-center gap-2">
+				<span class="material-symbols-outlined text-tertiary-fixed">link</span>
+				Direct Stream Connection
+			</h3>
+			<p class="text-sm text-on-surface-variant mb-6">
+				Have a private icecast or shoutcast link? Manually patch it into your library here.
+			</p>
+
+			<form onsubmit={addCustomStation} class="flex flex-col md:flex-row gap-4">
+				<input
+					type="text"
+					bind:value={customName}
+					placeholder="Station Identity"
+					class="flex-1 bg-surface-container-highest border border-outline-variant/20 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary text-white focus:outline-none"
+					required
+				/>
+				<input
+					type="url"
+					bind:value={customUrl}
+					placeholder="wss:// or http://..."
+					class="flex-[2] bg-surface-container-highest border border-outline-variant/20 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary text-white focus:outline-none"
+					required
+				/>
+				<button
+					type="submit"
+					disabled={isSubmitting}
+					class="bg-surface-container-highest hover:bg-surface-variant text-white border border-outline-variant/20 font-headline font-bold py-3 px-8 rounded-xl transition-colors disabled:opacity-50"
+				>
+					{isSubmitting ? 'Patching...' : 'Connect'}
+				</button>
+			</form>
+		</div>
 	</section>
 </div>

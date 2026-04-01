@@ -69,7 +69,10 @@ func (a *App) StopSchedulers() {
 
 func (a *App) Run(addr string) error {
 	a.StartSchedulers()
-	api := &APIHandler{a}
+
+	// FIX: Explicitly name the field during struct initialization
+	api := &APIHandler{app: a}
+
 	r := a.Router
 	api.RegisterAPI()
 

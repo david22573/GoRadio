@@ -1,29 +1,125 @@
 package app
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/david22573/GoRadio/app/types"
 	"github.com/gin-gonic/gin"
 )
 
+// SearchCache implementation
+type cacheEntry struct {
+	data      []byte
+	expiresAt time.Time
+}
+
+type searchCache struct {
+	mu      sync.RWMutex
+	entries map[string]cacheEntry
+	ttl     time.Duration
+}
+
+func newSearchCache(ttl time.Duration) *searchCache {
+	return &searchCache{
+		entries: make(map[string]cacheEntry),
+		ttl:     ttl,
+	}
+}
+
+func (c *searchCache) get(key string) ([]byte, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	entry, found := c.entries[key]
+	if !found || time.Now().After(entry.expiresAt) {
+		return nil, false
+	}
+	return entry.data, true
+}
+
+func (c *searchCache) set(key string, data []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries[key] = cacheEntry{
+		data:      data,
+		expiresAt: time.Now().Add(c.ttl),
+	}
+}
+
 type APIHandler struct {
-	app *App
+	app   *App
+	cache *searchCache
 }
 
 func (a *APIHandler) RegisterAPI() {
+	// Initialize cache with a 15-minute TTL for search queries
+	a.cache = newSearchCache(15 * time.Minute)
+
 	api := a.app.Router.Group("/api")
 	{
 		api.GET("/ping", func(c *gin.Context) { c.JSON(200, gin.H{"message": "pong"}) })
+		api.GET("/search", a.SearchStations) // New Route
+
 		api.GET("/stations", a.GetStations)
 		api.POST("/stations", a.CreateStation)
 		api.PUT("/stations/:id", a.UpdateStation)
 		api.DELETE("/stations/:id", a.DeleteStation)
+
 		api.GET("/shows", a.GetShows)
 		api.POST("/shows", a.CreateShow)
 		api.PUT("/shows/:id", a.UpdateShow)
 		api.DELETE("/shows/:id", a.DeleteShow)
 	}
+}
+
+func (a *APIHandler) SearchStations(c *gin.Context) {
+	query := c.Query("q")
+	if query == "" {
+		c.JSON(400, gin.H{"error": "search query 'q' is required"})
+		return
+	}
+
+	// 1. Check local Go cache
+	if cachedData, found := a.cache.get(query); found {
+		c.Data(200, "application/json", cachedData)
+		return
+	}
+
+	// 2. Cache miss, fetch from upstream API
+	upstreamURL := fmt.Sprintf("https://de1.api.radio-browser.info/json/stations/search?name=%s&limit=12&hidebroken=true", url.QueryEscape(query))
+	resp, err := http.Get(upstreamURL)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to contact radio-browser api"})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(resp.StatusCode, gin.H{"error": "upstream api returned an error"})
+		return
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to read upstream response"})
+		return
+	}
+
+	// 3. Verify it's valid JSON before caching
+	if !json.Valid(body) {
+		c.JSON(500, gin.H{"error": "upstream api returned invalid json"})
+		return
+	}
+
+	// 4. Save to cache and return
+	a.cache.set(query, body)
+	c.Data(200, "application/json", body)
 }
 
 func (a *APIHandler) GetStations(c *gin.Context) {
