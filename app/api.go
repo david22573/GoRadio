@@ -27,7 +27,7 @@ func (a *APIHandler) RegisterAPI() {
 }
 
 func (a *APIHandler) GetStations(c *gin.Context) {
-	stations, err := a.app.Store.GetAllStations()
+	stations, err := a.app.DB.GetAllStations()
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -41,7 +41,7 @@ func (a *APIHandler) CreateStation(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	if err := a.app.Store.CreateStation(station); err != nil {
+	if err := a.app.DB.CreateStation(station); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -60,7 +60,7 @@ func (a *APIHandler) UpdateStation(c *gin.Context) {
 		return
 	}
 	station.ID = id
-	if err := a.app.Store.UpdateStation(&station); err != nil {
+	if err := a.app.DB.UpdateStation(&station); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -73,7 +73,7 @@ func (a *APIHandler) DeleteStation(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	if err := a.app.Store.DeleteStation(id); err != nil {
+	if err := a.app.DB.DeleteStation(id); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -81,7 +81,7 @@ func (a *APIHandler) DeleteStation(c *gin.Context) {
 }
 
 func (a *APIHandler) GetShows(c *gin.Context) {
-	shows, err := a.app.Store.GetAllShows()
+	shows, err := a.app.DB.GetAllShows()
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -95,7 +95,7 @@ func (a *APIHandler) CreateShow(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	if err := a.app.Store.CreateShow(show); err != nil {
+	if err := a.app.DB.CreateShow(show); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -114,7 +114,7 @@ func (a *APIHandler) UpdateShow(c *gin.Context) {
 		return
 	}
 	show.ID = id
-	if err := a.app.Store.UpdateShow(&show); err != nil {
+	if err := a.app.DB.UpdateShow(&show); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -127,7 +127,7 @@ func (a *APIHandler) DeleteShow(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	if err := a.app.Store.DeleteShow(id); err != nil {
+	if err := a.app.DB.DeleteShow(id); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}

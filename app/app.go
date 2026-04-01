@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"log"
@@ -11,43 +12,38 @@ import (
 	"syscall"
 
 	"github.com/david22573/GoRadio/app/db"
-	"github.com/david22573/GoRadio/app/store"
 	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/go-co-op/gocron/v2"
 )
 
-//go:embed static/*
+//go:embed all:static
 var staticFiles embed.FS
 
 type App struct {
 	Router *gin.Engine
-	Store  store.RadioActions
+	DB     db.Client
+	Ctx    context.Context
+	cancel context.CancelFunc
 
 	schedulers []gocron.Scheduler
 	mu         sync.Mutex
 	httpSrv    *http.Server
 }
 
-func NewApp(db db.Client) (*App, error) {
+func NewApp(database db.Client) (*App, error) {
 	r := gin.Default()
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &App{
 		Router: r,
-		Store:  store.NewRadioStore(db),
+		DB:     database,
+		Ctx:    ctx,
+		cancel: cancel,
 
 		schedulers: []gocron.Scheduler{},
 	}, nil
 }
-
-// if station, err := store.GetAllStations(); err == nil {
-// 	for _, s := range station {
-// 		scheduler, err := schedulers.NewRadioScheduler(app, s, nil)
-// 		if err != nil {
-// 			log.Fatal(err)
-// 		}
-// 		app.AddScheduler(scheduler)
-// 	}
-// }
 
 func (a *App) AddScheduler(sch gocron.Scheduler) {
 	a.mu.Lock()
@@ -78,7 +74,6 @@ func (a *App) Run(addr string) error {
 	api.RegisterAPI()
 
 	staticFS, err := static.EmbedFolder(staticFiles, "static")
-
 	if err != nil {
 		return err
 	}
@@ -86,7 +81,7 @@ func (a *App) Run(addr string) error {
 	r.GET("/ping", func(c *gin.Context) { c.JSON(200, gin.H{"message": "pong"}) })
 
 	r.Use(static.Serve("/", staticFS))
-	// Or if you need SPA fallback for client-side routing:
+	// SPA fallback for client-side routing
 	r.NoRoute(func(c *gin.Context) {
 		c.File("app/static/index.html")
 	})
@@ -112,13 +107,16 @@ func (a *App) Run(addr string) error {
 	case err := <-errChan:
 		if err != nil && err != http.ErrServerClosed {
 			log.Printf("HTTP server error: %v", err)
+			a.cancel()
 			a.StopSchedulers()
 			return err
 		}
 		log.Println("HTTP server exited cleanly.")
 	}
 
+	// Cancel the context to kill any running FFMPEG processes
+	a.cancel()
 	a.StopSchedulers()
-	log.Println("Schedulers stopped.")
+	log.Println("Schedulers stopped and child processes killed.")
 	return nil
 }

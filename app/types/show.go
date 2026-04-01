@@ -26,11 +26,10 @@ func (s *Show) GetSchedule() ShowSchedule {
 	return ShowSchedule{Day: time.Weekday(s.Day), Hour: s.Hour, Min: s.Min}
 }
 
-func (s *Show) UpdateSchdule(schedule ShowSchedule) {
+func (s *Show) UpdateSchedule(schedule ShowSchedule) {
 	s.Day = uint(schedule.Day)
 	s.Hour = schedule.Hour
 	s.Min = schedule.Min
-	return
 }
 
 func (s Show) StartTime() (uint, uint, uint) {

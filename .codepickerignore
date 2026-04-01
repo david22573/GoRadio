@@ -1,0 +1,12 @@
+go.mod
+LICENSE
+README.md
+go.sum
+codepicker_context.*
+*.md
+./../*.md
+*.yml
+Dockerfile
+*.yaml
+*.json
+*.config.*

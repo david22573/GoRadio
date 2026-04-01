@@ -1,0 +1,1271 @@
+Project Context Dump (31 Mar 26 04:06 UTC)
+Format: xml
+Mode: FULL (No Truncation)
+Total Files: 24
+
+# Project Structure
+<file_tree>
+- Makefile
+- app/api.go
+- app/app.go
+- app/clients/radio.go
+- app/db/client.go
+- app/db/sqlite/helpers.go
+- app/db/sqlite/sqlite.go
+- app/db/sqlite/sqlite_test.go
+- app/schedulers/counter.go
+- app/schedulers/radio.go
+- app/store/actions.go
+- app/store/radio.go
+- app/types/radio.go
+- app/types/show.go
+- cmd/app/main.go
+- frontend/src/app.css
+- frontend/src/app.html
+- frontend/src/lib/components/nav/Logo.svelte
+- frontend/src/lib/components/nav/Nav.svelte
+- frontend/src/lib/index.js
+- frontend/src/routes/+layout.svelte
+- frontend/src/routes/+page.js
+- frontend/src/routes/+page.svelte
+- frontend/vitest-setup-client.js
+</file_tree>
+
+# File Contents
+<file path="Makefile">
+build:
+	@go build -o bin/GoRadio ./cmd/app/main.go
+
+run:
+	@bin/GoRadio
+
+dev:
+	@cd frontend && npm run dev
+
+build-web:
+	@cd frontend && npm run build
+	@cp -rf frontend/build/* app/static
+
+buildr:
+	@make build
+	@make run
+
+</file>
+
+<file path="app/api.go">
+package app
+
+import (
+	"strconv"
+
+	"github.com/david22573/GoRadio/app/types"
+	"github.com/gin-gonic/gin"
+)
+
+type APIHandler struct {
+	app *App
+}
+
+func (a *APIHandler) RegisterAPI() {
+	api := a.app.Router.Group("/api")
+	{
+		api.GET("/ping", func(c *gin.Context) { c.JSON(200, gin.H{"message": "pong"}) })
+		api.GET("/stations", a.GetStations)
+		api.POST("/stations", a.CreateStation)
+		api.PUT("/stations/:id", a.UpdateStation)
+		api.DELETE("/stations/:id", a.DeleteStation)
+		api.GET("/shows", a.GetShows)
+		api.POST("/shows", a.CreateShow)
+		api.PUT("/shows/:id", a.UpdateShow)
+		api.DELETE("/shows/:id", a.DeleteShow)
+	}
+}
+
+func (a *APIHandler) GetStations(c *gin.Context) {
+	stations, err := a.app.Store.GetAllStations()
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"stations": stations})
+}
+
+func (a *APIHandler) CreateStation(c *gin.Context) {
+	var station types.Station
+	if err := c.Bind(&station); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	if err := a.app.Store.CreateStation(station); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(201, gin.H{"message": "Station created successfully"})
+}
+
+func (a *APIHandler) UpdateStation(c *gin.Context) {
+	var station types.Station
+	if err := c.Bind(&station); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	id, err := getUintParam(c, "id")
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	station.ID = id
+	if err := a.app.Store.UpdateStation(&station); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"message": "Station updated successfully"})
+}
+
+func (a *APIHandler) DeleteStation(c *gin.Context) {
+	id, err := getUintParam(c, "id")
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	if err := a.app.Store.DeleteStation(id); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"message": "Station deleted successfully"})
+}
+
+func (a *APIHandler) GetShows(c *gin.Context) {
+	shows, err := a.app.Store.GetAllShows()
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"shows": shows})
+}
+
+func (a *APIHandler) CreateShow(c *gin.Context) {
+	var show types.Show
+	if err := c.Bind(&show); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	if err := a.app.Store.CreateShow(show); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(201, gin.H{"message": "Show created successfully"})
+}
+
+func (a *APIHandler) UpdateShow(c *gin.Context) {
+	var show types.Show
+	if err := c.Bind(&show); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	id, err := getUintParam(c, "id")
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	show.ID = id
+	if err := a.app.Store.UpdateShow(&show); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"message": "Show updated successfully"})
+}
+
+func (a *APIHandler) DeleteShow(c *gin.Context) {
+	id, err := getUintParam(c, "id")
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	if err := a.app.Store.DeleteShow(id); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"message": "Show deleted successfully"})
+}
+
+func getUintParam(c *gin.Context, param string) (uint, error) {
+	idStr := c.Param(param)
+	idInt, err := strconv.Atoi(idStr)
+	if err != nil {
+		return 0, err
+	}
+	return uint(idInt), nil
+}
+
+</file>
+
+<file path="app/app.go">
+package app
+
+import (
+	"embed"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+
+	"github.com/david22573/GoRadio/app/db"
+	"github.com/david22573/GoRadio/app/store"
+	"github.com/gin-contrib/static"
+	"github.com/gin-gonic/gin"
+	"github.com/go-co-op/gocron/v2"
+)
+
+//go:embed static/*
+var staticFiles embed.FS
+
+type App struct {
+	Router *gin.Engine
+	Store  store.RadioActions
+
+	schedulers []gocron.Scheduler
+	mu         sync.Mutex
+	httpSrv    *http.Server
+}
+
+func NewApp(db db.Client) (*App, error) {
+	r := gin.Default()
+	return &App{
+		Router: r,
+		Store:  store.NewRadioStore(db),
+
+		schedulers: []gocron.Scheduler{},
+	}, nil
+}
+
+// if station, err := store.GetAllStations(); err == nil {
+// 	for _, s := range station {
+// 		scheduler, err := schedulers.NewRadioScheduler(app, s, nil)
+// 		if err != nil {
+// 			log.Fatal(err)
+// 		}
+// 		app.AddScheduler(scheduler)
+// 	}
+// }
+
+func (a *App) AddScheduler(sch gocron.Scheduler) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.schedulers = append(a.schedulers, sch)
+}
+
+func (a *App) StartSchedulers() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, sch := range a.schedulers {
+		sch.Start()
+	}
+}
+
+func (a *App) StopSchedulers() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, sch := range a.schedulers {
+		sch.Shutdown()
+	}
+}
+
+func (a *App) Run(addr string) error {
+	a.StartSchedulers()
+	api := &APIHandler{a}
+	r := a.Router
+	api.RegisterAPI()
+
+	staticFS, err := static.EmbedFolder(staticFiles, "static")
+
+	if err != nil {
+		return err
+	}
+
+	r.GET("/ping", func(c *gin.Context) { c.JSON(200, gin.H{"message": "pong"}) })
+
+	r.Use(static.Serve("/", staticFS))
+	// Or if you need SPA fallback for client-side routing:
+	r.NoRoute(func(c *gin.Context) {
+		c.File("app/static/index.html")
+	})
+
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: r,
+	}
+	a.httpSrv = srv
+
+	errChan := make(chan error, 1)
+	go func() {
+		fmt.Printf("🚀 Serving on http://localhost%s\n", addr)
+		errChan <- srv.ListenAndServe()
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case sig := <-stop:
+		log.Printf("Received signal %s: initiating shutdown.", sig)
+	case err := <-errChan:
+		if err != nil && err != http.ErrServerClosed {
+			log.Printf("HTTP server error: %v", err)
+			a.StopSchedulers()
+			return err
+		}
+		log.Println("HTTP server exited cleanly.")
+	}
+
+	a.StopSchedulers()
+	log.Println("Schedulers stopped.")
+	return nil
+}
+
+</file>
+
+<file path="app/clients/radio.go">
+package clients
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"time"
+
+	"github.com/david22573/GoRadio/app/types"
+)
+
+type RadioClient struct {
+	outputPath string
+	url        string
+}
+
+// NewRadioClient ensures the output folder exists.
+func NewRadioClient(rootFolder, radioURL string) *RadioClient {
+	if err := os.MkdirAll(rootFolder, os.ModePerm); err != nil {
+		log.Fatalf("failed to create root folder: %v", err)
+	}
+	cwd, _ := os.Getwd()
+	op := filepath.Join(cwd, rootFolder)
+	return &RadioClient{
+		outputPath: op,
+		url:        radioURL,
+	}
+}
+
+// Record uses ffmpeg to record the stream for show.Duration.
+func (rc *RadioClient) Record(show *types.Show) error {
+	// timestamped filename
+	ts := time.Now().Format("2006-01-02")
+	filename := fmt.Sprintf("%s_%s.aac", show.Name, ts)
+	showDir := filepath.Join(rc.outputPath, show.Name)
+	if err := os.MkdirAll(showDir, os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create show folder: %w", err)
+	}
+	outPath := filepath.Join(showDir, filename)
+
+	// build ffmpeg args
+	args := []string{
+		"-i", rc.url,
+		"-t", strconv.Itoa(int(show.Duration.Seconds())),
+		"-c",
+		"copy",
+		outPath,
+	}
+
+	currDir := exec.Command("explorer .")
+	currDir.Run()
+
+	log.Printf("▶️  Recording %s for %v → %s\n", show.Name, show.Duration, outPath)
+	cmd := exec.Command("ffmpeg", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start ffmpeg: %w", err)
+	}
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("ffmpeg exited with error: %w", err)
+	}
+
+	log.Printf("✅ Finished recording %s\n", filename)
+	return nil
+}
+
+</file>
+
+<file path="app/db/client.go">
+package db
+
+import "github.com/david22573/GoRadio/app/types"
+
+// Client defines all the methods the store layer can use to interact with the DB
+type Client interface {
+	GetAllStations() ([]types.Station, error)
+	GetStationByID(id uint) (*types.Station, error)
+	GetStationByName(name string) (*types.Station, error)
+	CreateStation(station types.Station) error
+	UpdateStation(station *types.Station) error
+	DeleteStation(id uint) error
+
+	GetAllShows() ([]types.Show, error)
+	GetShowByID(id uint) (*types.Show, error)
+	GetShowByName(name string) (*types.Show, error)
+	CreateShow(show types.Show) error
+	UpdateShow(show *types.Show) error
+	DeleteShow(id uint) error
+
+	// Close releases any open resources (like DB connections)
+	Close() error
+}
+
+</file>
+
+<file path="app/db/sqlite/helpers.go">
+package sqlite
+
+import (
+	"database/sql"
+	"errors"
+	"time"
+
+	"github.com/david22573/GoRadio/app/types"
+)
+
+// QueryMultiple executes a query expected to return multiple rows.
+func queryMultiple[T any](
+	db *sql.DB,
+	scannerFunc func(*sql.Rows) (T, error),
+	query string, args ...any,
+) ([]T, error) {
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []T
+	for rows.Next() {
+		item, err := scannerFunc(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// querySingle executes a query expected to return a single row.
+// Returns store.ErrNotFound if no row is found.
+func querySingle[T any](
+	db *sql.DB,
+	scannerFunc func(*sql.Rows) (T, error),
+	query string, args ...any,
+) (*T, error) {
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	if rows.Next() {
+		item, err := scannerFunc(rows)
+		if err != nil {
+			return nil, err
+		}
+		if rows.Next() {
+			return nil, errors.New("database: expected single row, but got multiple")
+		}
+		return &item, nil
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+// execInsert handles INSERT statements and returns the last inserted ID.
+func execInsert(db *sql.DB, query string, args ...any) (int64, error) {
+	res, err := db.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// execAffected handles UPDATE or DELETE statements and returns rows affected.
+func execAffected(db *sql.DB, query string, args ...any) (int64, error) {
+	res, err := db.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// --- Scanner Functions ---
+
+// scanShow scans a show from the current sql.Rows.
+// Assumes columns are: id, name, duration, day, hour, min, station_id
+func scanShow(rows *sql.Rows) (types.Show, error) {
+	var s types.Show
+	var secs int64
+	var weekday int
+
+	err := rows.Scan(
+		&s.ID,
+		&s.Name,
+		&secs,
+		&weekday,
+		&s.Hour,
+		&s.Min,
+		&s.Scheduled,
+		&s.StationID,
+	)
+	if err != nil {
+		return types.Show{}, err
+	}
+	s.Duration = types.ShowDuration{Duration: time.Duration(secs) * time.Second}
+	s.Day = uint(weekday)
+
+	return s, nil
+}
+
+// scanStation scans a station from the current sql.Rows.
+// Assumes columns are: id, name, url
+func scanStation(rows *sql.Rows) (types.Station, error) {
+	var st types.Station
+	if err := rows.Scan(&st.ID, &st.Name, &st.URL); err != nil {
+		return types.Station{}, err
+	}
+	return st, nil
+}
+
+</file>
+
+<file path="app/db/sqlite/sqlite.go">
+package sqlite
+
+import (
+	"database/sql"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/david22573/GoRadio/app/types"
+
+	_ "modernc.org/sqlite"
+)
+
+type Client struct {
+	db *sql.DB
+}
+
+func NewSQLiteClient(filename string) (*Client, error) {
+	if err := os.MkdirAll("data", os.ModePerm); err != nil {
+		return nil, fmt.Errorf("error creating data folder: %w", err)
+	}
+
+	dsn := fmt.Sprintf("data/%s", filename)
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	return &Client{db: db}, nil
+}
+
+func (c *Client) Close() error {
+	return c.db.Close()
+}
+
+func migrate(db *sql.DB) error {
+	schema := `
+    CREATE TABLE IF NOT EXISTS stations (
+        id   INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        url  TEXT NOT NULL UNIQUE
+    );
+    CREATE TABLE IF NOT EXISTS shows (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL UNIQUE,
+        duration   INTEGER NOT NULL,
+        day        INTEGER NOT NULL,
+        hour       INTEGER NOT NULL,
+        min        INTEGER NOT NULL,
+        scheduled  INTEGER NOT NULL DEFAULT 0,
+        station_id INTEGER NOT NULL,
+        FOREIGN KEY(station_id) REFERENCES stations(id) ON DELETE CASCADE
+    );`
+	_, err := db.Exec(schema)
+	return err
+}
+
+func (c *Client) GetAllStations() ([]types.Station, error) {
+	return queryMultiple(c.db, scanStation, "SELECT id, name, url FROM stations")
+}
+
+func (c *Client) GetStationByID(id uint) (*types.Station, error) {
+	return querySingle(c.db, scanStation, "SELECT id, name, url FROM stations WHERE id = ?", id)
+}
+
+func (c *Client) GetStationByName(name string) (*types.Station, error) {
+	return querySingle(c.db, scanStation, "SELECT id, name, url FROM stations WHERE name = ?", name)
+}
+
+func (c *Client) CreateStation(station types.Station) error {
+	_, err := execInsert(c.db, "INSERT INTO stations (name, url) VALUES (?, ?)", station.Name, station.URL)
+	return err
+}
+
+func (c *Client) UpdateStation(station *types.Station) error {
+	_, err := execAffected(c.db, "UPDATE stations SET name = ?, url = ? WHERE id = ?", station.Name, station.URL, station.ID)
+	return err
+}
+
+func (c *Client) DeleteStation(id uint) error {
+	_, err := execAffected(c.db, "DELETE FROM stations WHERE id = ?", id)
+	return err
+}
+
+func (c *Client) GetAllShows() ([]types.Show, error) {
+	return queryMultiple(c.db, scanShow, "SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows")
+}
+
+func (c *Client) GetShowByName(name string) (*types.Show, error) {
+	return querySingle(c.db, scanShow, "SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows WHERE name = ?", name)
+}
+
+func (c *Client) GetShowByID(id uint) (*types.Show, error) {
+	return querySingle(c.db, scanShow, "SELECT id, name, duration, day, hour, min, scheduled, station_id FROM shows WHERE id = ?", id)
+}
+
+func (c *Client) CreateShow(show types.Show) error {
+	_, err := execInsert(c.db, `INSERT INTO shows (name, duration, day, hour, min, scheduled, station_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		show.Name, int64(show.Duration.Duration/time.Second), show.Day, show.Hour, show.Min, show.Scheduled, show.StationID)
+	return err
+}
+
+func (c *Client) UpdateShow(show *types.Show) error {
+	_, err := execAffected(c.db, `UPDATE shows SET name = ?, duration = ?, day = ?, hour = ?, min = ?, scheduled = ?, station_id = ?
+		WHERE id = ?`,
+		show.Name, int64(show.Duration.Duration/time.Second), show.Day, show.Hour, show.Min, show.Scheduled, show.StationID, show.ID)
+	return err
+}
+
+func (c *Client) DeleteShow(id uint) error {
+	_, err := execAffected(c.db, "DELETE FROM shows WHERE id = ?", id)
+	return err
+}
+
+</file>
+
+<file path="app/db/sqlite/sqlite_test.go">
+package sqlite_test
+
+import (
+	"os"
+	"testing"
+	"time"
+
+	"github.com/david22573/GoRadio/app/db/sqlite"
+	"github.com/david22573/GoRadio/app/types"
+)
+
+func setupTestClient(t *testing.T) *sqlite.Client {
+	t.Helper()
+	dbFile := "test_db.sqlite"
+	_ = os.Remove("data/" + dbFile)
+
+	client, err := sqlite.NewSQLiteClient(dbFile)
+	if err != nil {
+		t.Fatalf("failed to create test client: %v", err)
+	}
+	t.Cleanup(func() {
+		client.Close()
+		os.Remove("data/" + dbFile)
+	})
+	return client
+}
+
+func TestStationCRUD(t *testing.T) {
+	client := setupTestClient(t)
+
+	station := types.Station{Name: "Test Station", URL: "http://localhost"}
+	err := client.CreateStation(station)
+	if err != nil {
+		t.Fatalf("CreateStation failed: %v", err)
+	}
+
+	fetched, err := client.GetStationByName("Test Station")
+	if err != nil || fetched == nil || fetched.URL != station.URL {
+		t.Fatalf("GetStationByName failed: %v", err)
+	}
+
+	fetched.URL = "http://updated"
+	err = client.UpdateStation(fetched)
+	if err != nil {
+		t.Fatalf("UpdateStation failed: %v", err)
+	}
+
+	updated, _ := client.GetStationByID(fetched.ID)
+	if updated.URL != "http://updated" {
+		t.Errorf("expected URL to be updated, got %s", updated.URL)
+	}
+
+	err = client.DeleteStation(fetched.ID)
+	if err != nil {
+		t.Fatalf("DeleteStation failed: %v", err)
+	}
+
+	none, _ := client.GetStationByID(fetched.ID)
+	if none != nil {
+		t.Error("expected station to be deleted")
+	}
+}
+
+func TestShowCRUD(t *testing.T) {
+	client := setupTestClient(t)
+
+	station := types.Station{Name: "Station for Show", URL: "http://station"}
+	err := client.CreateStation(station)
+	if err != nil {
+		t.Fatalf("CreateStation for Show failed: %v", err)
+	}
+	st, _ := client.GetStationByName("Station for Show")
+
+	show := types.Show{
+		Name:      "Test Show",
+		Duration:  types.ShowDuration{Duration: 30 * time.Minute},
+		Day:       2,
+		Hour:      10,
+		Min:       15,
+		Scheduled: true,
+		StationID: st.ID,
+	}
+	err = client.CreateShow(show)
+	if err != nil {
+		t.Fatalf("CreateShow failed: %v", err)
+	}
+
+	fetched, err := client.GetShowByName("Test Show")
+	if err != nil || fetched == nil || fetched.Hour != 10 {
+		t.Fatalf("GetShowByName failed: %v", err)
+	}
+
+	fetched.Hour = 12
+	err = client.UpdateShow(fetched)
+	if err != nil {
+		t.Fatalf("UpdateShow failed: %v", err)
+	}
+
+	updated, _ := client.GetShowByID(fetched.ID)
+	if updated.Hour != 12 {
+		t.Errorf("expected hour to be updated, got %d", updated.Hour)
+	}
+
+	err = client.DeleteShow(fetched.ID)
+	if err != nil {
+		t.Fatalf("DeleteShow failed: %v", err)
+	}
+
+	none, _ := client.GetShowByID(fetched.ID)
+	if none != nil {
+		t.Error("expected show to be deleted")
+	}
+}
+
+</file>
+
+<file path="app/schedulers/counter.go">
+package schedulers
+
+</file>
+
+<file path="app/schedulers/radio.go">
+package schedulers
+
+import (
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/david22573/GoRadio/app"
+	"github.com/david22573/GoRadio/app/types"
+	"github.com/go-co-op/gocron/v2"
+)
+
+// RadioScheduler embeds gocron.Scheduler for scheduler functionality
+// while adding radio-specific state
+type RadioScheduler struct {
+	Name  string
+	URL   string
+	Shows []types.Show
+
+	app  *app.App
+	jobs map[uint]gocron.Job
+	mu   sync.Mutex
+	// The embedded scheduler interface
+	gocron.Scheduler
+}
+
+// NewRadioScheduler creates a new RadioScheduler
+func NewRadioScheduler(app *app.App, station types.Station, loc *time.Location) (*RadioScheduler, error) {
+	shows, err := app.Store.GetAllShows()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get shows: %w", err)
+	}
+
+	if loc == nil {
+		var err error
+		loc, err = time.LoadLocation("America/Los_Angeles")
+		if err != nil {
+			return nil, fmt.Errorf("failed to load location: %w", err)
+		}
+	}
+
+	// Create the base scheduler
+	scheduler, err := gocron.NewScheduler(gocron.WithLocation(loc))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create scheduler: %w", err)
+	}
+
+	jobs := make(map[uint]gocron.Job)
+
+	// Create the radio scheduler with embedding
+	rs := &RadioScheduler{
+		Name:  station.Name,
+		URL:   station.URL,
+		Shows: shows,
+
+		app:       app,
+		jobs:      jobs,
+		Scheduler: scheduler, // Assign the created scheduler to the embedded field
+	}
+
+	// Schedule shows
+	if err := rs.scheduleShows(); err != nil {
+		// Clean up on failure
+		if shutdownErr := scheduler.Shutdown(); shutdownErr != nil {
+			fmt.Printf("Failed to shutdown scheduler: %v\n", shutdownErr)
+		}
+		return nil, fmt.Errorf("failed to schedule shows: %w", err)
+	}
+
+	return rs, nil
+}
+
+func (r *RadioScheduler) Start() {
+	fmt.Println("Starting radio scheduler...")
+	r.Scheduler.Start()
+}
+
+// scheduleShows adds all shows to the scheduler
+func (s *RadioScheduler) scheduleShows() error {
+	for i, show := range s.Shows {
+		show := show // shadow to close properly
+		if err := s.ScheduleShow(show); err != nil {
+			return fmt.Errorf("failed to schedule show %d (%s): %w", i, show.Name, err)
+		}
+	}
+	return nil
+}
+
+// ScheduleShow adds a single show to the scheduler
+func (s *RadioScheduler) ScheduleShow(show types.Show) error {
+	jobDef := gocron.DailyJob(1, gocron.NewAtTimes(gocron.NewAtTime(show.StartTime())))
+	task := gocron.NewTask(func() {
+		// … run the show …
+	})
+	job, err := s.NewJob(jobDef, task)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.jobs[show.ID] = job
+	s.mu.Unlock()
+	return nil
+}
+
+// CancelShow cancels a previously scheduled show by ID.
+func (s *RadioScheduler) CancelShow(showID uint) error {
+	s.mu.Lock()
+	job, ok := s.jobs[showID]
+	s.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("no job found for show %q", showID)
+	}
+	s.mu.Lock()
+	delete(s.jobs, showID)
+	s.mu.Unlock()
+	return s.RemoveJob(job.ID())
+}
+
+</file>
+
+<file path="app/store/actions.go">
+package store
+
+import "github.com/david22573/GoRadio/app/types"
+
+type RadioActions interface {
+	GetAllStations() ([]types.Station, error)
+	GetStationByID(id uint) (*types.Station, error)
+	GetStationByName(name string) (*types.Station, error)
+	CreateStation(station types.Station) error
+	UpdateStation(station *types.Station) error
+	DeleteStation(id uint) error
+
+	GetAllShows() ([]types.Show, error)
+	GetShowByID(id uint) (*types.Show, error)
+	GetShowByName(name string) (*types.Show, error)
+	CreateShow(show types.Show) error
+	UpdateShow(show *types.Show) error
+	DeleteShow(id uint) error
+
+	// Close releases any open resources (like DB connections)
+	Close() error
+}
+
+</file>
+
+<file path="app/store/radio.go">
+package store
+
+import (
+	"github.com/david22573/GoRadio/app/db"
+	"github.com/david22573/GoRadio/app/types"
+)
+
+type radioStore struct {
+	dbClient db.Client
+}
+
+func NewRadioStore(client db.Client) *radioStore {
+	return &radioStore{dbClient: client}
+}
+
+func (s *radioStore) GetAllStations() ([]types.Station, error) {
+	return s.dbClient.GetAllStations()
+}
+
+func (s *radioStore) GetStationByID(id uint) (*types.Station, error) {
+	return s.dbClient.GetStationByID(id)
+}
+
+func (s *radioStore) GetStationByName(name string) (*types.Station, error) {
+	return s.dbClient.GetStationByName(name)
+}
+
+func (s *radioStore) CreateStation(station types.Station) error {
+	return s.dbClient.CreateStation(station)
+}
+
+func (s *radioStore) UpdateStation(station *types.Station) error {
+	return s.dbClient.UpdateStation(station)
+}
+
+func (s *radioStore) DeleteStation(id uint) error {
+	return s.dbClient.DeleteStation(id)
+}
+
+func (s *radioStore) GetAllShows() ([]types.Show, error) {
+	return s.dbClient.GetAllShows()
+}
+
+func (s *radioStore) GetShowByID(id uint) (*types.Show, error) {
+	return s.dbClient.GetShowByID(id)
+}
+func (s *radioStore) GetShowByName(name string) (*types.Show, error) {
+	return s.dbClient.GetShowByName(name)
+}
+
+func (s *radioStore) CreateShow(show types.Show) error {
+	return s.dbClient.CreateShow(show)
+}
+
+func (s *radioStore) UpdateShow(show *types.Show) error {
+	return s.dbClient.UpdateShow(show)
+}
+
+func (s *radioStore) DeleteShow(id uint) error {
+	return s.dbClient.DeleteShow(id)
+}
+
+func (s *radioStore) Close() error {
+	return s.dbClient.Close()
+}
+
+</file>
+
+<file path="app/types/radio.go">
+package types
+
+type Station struct {
+	ID   uint   `json:"id" form:"id"`
+	Name string `json:"name" form:"name"`
+	URL  string `json:"url" form:"url"`
+}
+
+</file>
+
+<file path="app/types/show.go">
+package types
+
+import (
+	"fmt"
+	"time"
+)
+
+type Show struct {
+	ID        uint         `json:"id" form:"id"`
+	Name      string       `json:"name" form:"name"`
+	Day       uint         `json:"day" form:"day"`   // 0 = Sunday
+	Hour      uint         `json:"hour" form:"hour"` // 0–23
+	Min       uint         `json:"min" form:"min"`   // 0–59
+	Duration  ShowDuration `json:"duration" form:"duration"`
+	Scheduled bool         `json:"scheduled" form:"scheduled"`
+	StationID uint         `json:"station_id" form:"station_id"`
+}
+
+type ShowSchedule struct {
+	Day  time.Weekday
+	Hour uint
+	Min  uint
+}
+
+func (s *Show) GetSchedule() ShowSchedule {
+	return ShowSchedule{Day: time.Weekday(s.Day), Hour: s.Hour, Min: s.Min}
+}
+
+func (s *Show) UpdateSchdule(schedule ShowSchedule) {
+	s.Day = uint(schedule.Day)
+	s.Hour = schedule.Hour
+	s.Min = schedule.Min
+	return
+}
+
+func (s Show) StartTime() (uint, uint, uint) {
+	return s.Hour, s.Min, 0
+}
+
+type ShowDuration struct{ time.Duration }
+
+func (s ShowDuration) String() string {
+	return time.Duration(s.Duration).String()
+}
+
+func (s ShowDuration) MarshalJSON() ([]byte, error) {
+	return []byte(fmt.Sprintf("%d", int64(s.Duration/time.Second))), nil
+}
+
+func (s *ShowDuration) UnmarshalJSON(b []byte) error {
+	var seconds int64
+	_, err := fmt.Sscanf(string(b), "%d", &seconds)
+	if err != nil {
+		return err
+	}
+	*s = ShowDuration{Duration: time.Duration(seconds) * time.Second}
+	return nil
+}
+
+</file>
+
+<file path="cmd/app/main.go">
+package main
+
+import (
+	"log"
+
+	"github.com/david22573/GoRadio/app"
+	"github.com/david22573/GoRadio/app/db/sqlite"
+	"gopkg.in/natefinch/lumberjack.v2"
+)
+
+func main() {
+	log.SetOutput(&lumberjack.Logger{
+		Filename:   "GoRadio.log",
+		MaxSize:    500, // megabytes
+		MaxBackups: 3,
+		MaxAge:     28,   //days
+		Compress:   true, // disabled by default
+	})
+	db, err := sqlite.NewSQLiteClient("radio.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	app, err := app.NewApp(db)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	app.Run(":8000")
+}
+
+</file>
+
+<file path="frontend/src/app.css">
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+body {
+	background-color: #2a2a2a;
+	color: white;
+	max-height: 100dvh;
+	overflow: hidden;
+}
+</file>
+
+<file path="frontend/src/app.html">
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8" />
+	<link
+		rel="icon"
+		href="%sveltekit.assets%/goradio.ico"
+	/>
+	<meta
+		name="viewport"
+		content="width=device-width, initial-scale=1"
+	/>
+	%sveltekit.head%
+</head>
+
+<body data-sveltekit-preload-data="hover">
+	<div style="display: contents">%sveltekit.body%</div>
+</body>
+
+</html>
+</file>
+
+<file path="frontend/src/lib/components/nav/Logo.svelte">
+<a href="/" class="flex items-center">
+	<div class="flex bg-white w-fit p-2 rounded-lg">
+		<img src="/logo.svg" alt="GoRadio" class="h-10 md:h-14 mr-3" />
+		<span class="sr-only">GoRadio</span>
+		<h1 class="text-2xl md:text-5xl w-fit text-sky-600">GoRadio</h1>
+	</div>
+</a>
+
+</file>
+
+<file path="frontend/src/lib/components/nav/Nav.svelte">
+<script>
+	import Logo from './Logo.svelte';
+	let props = $props();
+</script>
+
+<nav class="flex items-center justify-between">
+	<Logo />
+</nav>
+
+</file>
+
+<file path="frontend/src/lib/index.js">
+// place files you want to import through the `$lib` alias in this folder.
+
+</file>
+
+<file path="frontend/src/routes/+layout.svelte">
+<script>
+	import '../app.css';
+	import Nav from '$lib/components/nav/Nav.svelte';
+	let { children } = $props();
+</script>
+
+<div class="flex flex-col min-h-screen size-full p-4">
+	<Nav />
+
+	{@render children?.()}
+</div>
+
+</file>
+
+<file path="frontend/src/routes/+page.js">
+export const load = async ({ fetch }) => {
+	try {
+		const res = await fetch('/api/stations');
+		const data = await res.json();
+		return { stations: data.stations };
+	} catch (error) {
+		console.error(error);
+	}
+};
+
+</file>
+
+<file path="frontend/src/routes/+page.svelte">
+<script lang="ts">
+	let { data } = $props();
+</script>
+
+{#each data.stations as station}
+	<div class="flex items-center gap-4">
+		<a href="/radio/{station.id}">{JSON.stringify(station, null, 2)}</a>
+		<audio src={station.url} controls> </audio>
+	</div>
+{/each}
+
+</file>
+
+<file path="frontend/vitest-setup-client.js">
+import '@testing-library/jest-dom/vitest';
+import { vi } from 'vitest';
+
+// required for svelte5 + jsdom as jsdom does not support matchMedia
+Object.defineProperty(window, 'matchMedia', {
+	writable: true,
+	enumerable: true,
+	value: vi.fn().mockImplementation((query) => ({
+		matches: false,
+		media: query,
+		onchange: null,
+		addEventListener: vi.fn(),
+		removeEventListener: vi.fn(),
+		dispatchEvent: vi.fn()
+	}))
+});
+
+// add more mocks here if you need them
+
+</file>
+
+
+
+```json
+{
+  "total_bytes": 26880,
+  "file_count": 24,
+  "estimated_tokens": 7188,
+  "mode": "full",
+  "generated_at": "2026-03-31T04:06:20.725779583Z"
+}
+```
