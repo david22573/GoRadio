@@ -1,37 +1,35 @@
-Project Context Dump (01 Apr 26 10:41 PDT)
-Format: xml
-Mode: FULL (No Truncation)
-Total Files: 24
-
-# Project Structure
 <file_tree>
 - Makefile
-- app\api.go
-- app\app.go
-- app\clients\radio.go
-- app\db\client.go
-- app\db\sqlite\helpers.go
-- app\db\sqlite\sqlite.go
-- app\db\sqlite\sqlite_test.go
-- app\schedulers\counter.go
-- app\schedulers\radio.go
-- app\store\actions.go
-- app\store\radio.go
-- app\types\radio.go
-- app\types\show.go
-- cmd\app\main.go
-- frontend\src\app.css
-- frontend\src\app.html
-- frontend\src\lib\components\nav\Logo.svelte
-- frontend\src\lib\components\nav\Nav.svelte
-- frontend\src\lib\index.js
-- frontend\src\routes\+layout.svelte
-- frontend\src\routes\+page.js
-- frontend\src\routes\+page.svelte
-- frontend\vitest-setup-client.js
+- app/api.go
+- app/app.go
+- app/clients/radio.go
+- app/db/client.go
+- app/db/sqlite/helpers.go
+- app/db/sqlite/sqlite.go
+- app/db/sqlite/sqlite_test.go
+- app/schedulers/counter.go
+- app/schedulers/radio.go
+- app/store/actions.go
+- app/store/radio.go
+- app/types/radio.go
+- app/types/show.go
+- cmd/app/main.go
+- frontend/src/app.css
+- frontend/src/app.html
+- frontend/src/lib/components/DiscoverCard.svelte
+- frontend/src/lib/components/StationCard.svelte
+- frontend/src/lib/components/nav/Logo.svelte
+- frontend/src/lib/components/nav/Nav.svelte
+- frontend/src/lib/index.js
+- frontend/src/lib/player.svelte.ts
+- frontend/src/routes/+layout.svelte
+- frontend/src/routes/+page.js
+- frontend/src/routes/+page.svelte
+- frontend/src/routes/station/[id]/+page.js
+- frontend/src/routes/station/[id]/+page.svelte
+- frontend/vitest-setup-client.js
 </file_tree>
 
-# File Contents
 <file path="Makefile">
 build:
 	@mkdir -p app/static
@@ -56,33 +54,129 @@ buildr:
 
 </file>
 
-<file path="app\api.go">
+<file path="app/api.go">
 package app
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/david22573/GoRadio/app/types"
 	"github.com/gin-gonic/gin"
 )
 
+// SearchCache implementation
+type cacheEntry struct {
+	data      []byte
+	expiresAt time.Time
+}
+
+type searchCache struct {
+	mu      sync.RWMutex
+	entries map[string]cacheEntry
+	ttl     time.Duration
+}
+
+func newSearchCache(ttl time.Duration) *searchCache {
+	return &searchCache{
+		entries: make(map[string]cacheEntry),
+		ttl:     ttl,
+	}
+}
+
+func (c *searchCache) get(key string) ([]byte, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	entry, found := c.entries[key]
+	if !found || time.Now().After(entry.expiresAt) {
+		return nil, false
+	}
+	return entry.data, true
+}
+
+func (c *searchCache) set(key string, data []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries[key] = cacheEntry{
+		data:      data,
+		expiresAt: time.Now().Add(c.ttl),
+	}
+}
+
 type APIHandler struct {
-	app *App
+	app   *App
+	cache *searchCache
 }
 
 func (a *APIHandler) RegisterAPI() {
+	// Initialize cache with a 15-minute TTL for search queries
+	a.cache = newSearchCache(15 * time.Minute)
+
 	api := a.app.Router.Group("/api")
 	{
 		api.GET("/ping", func(c *gin.Context) { c.JSON(200, gin.H{"message": "pong"}) })
+		api.GET("/search", a.SearchStations) // New Route
+
 		api.GET("/stations", a.GetStations)
 		api.POST("/stations", a.CreateStation)
 		api.PUT("/stations/:id", a.UpdateStation)
 		api.DELETE("/stations/:id", a.DeleteStation)
+
 		api.GET("/shows", a.GetShows)
 		api.POST("/shows", a.CreateShow)
 		api.PUT("/shows/:id", a.UpdateShow)
 		api.DELETE("/shows/:id", a.DeleteShow)
 	}
+}
+
+func (a *APIHandler) SearchStations(c *gin.Context) {
+	query := c.Query("q")
+	if query == "" {
+		c.JSON(400, gin.H{"error": "search query 'q' is required"})
+		return
+	}
+
+	// 1. Check local Go cache
+	if cachedData, found := a.cache.get(query); found {
+		c.Data(200, "application/json", cachedData)
+		return
+	}
+
+	// 2. Cache miss, fetch from upstream API
+	upstreamURL := fmt.Sprintf("https://de1.api.radio-browser.info/json/stations/search?name=%s&limit=12&hidebroken=true", url.QueryEscape(query))
+	resp, err := http.Get(upstreamURL)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to contact radio-browser api"})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(resp.StatusCode, gin.H{"error": "upstream api returned an error"})
+		return
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to read upstream response"})
+		return
+	}
+
+	// 3. Verify it's valid JSON before caching
+	if !json.Valid(body) {
+		c.JSON(500, gin.H{"error": "upstream api returned invalid json"})
+		return
+	}
+
+	// 4. Save to cache and return
+	a.cache.set(query, body)
+	c.Data(200, "application/json", body)
 }
 
 func (a *APIHandler) GetStations(c *gin.Context) {
@@ -204,7 +298,7 @@ func getUintParam(c *gin.Context, param string) (uint, error) {
 
 </file>
 
-<file path="app\app.go">
+<file path="app/app.go">
 package app
 
 import (
@@ -276,7 +370,10 @@ func (a *App) StopSchedulers() {
 
 func (a *App) Run(addr string) error {
 	a.StartSchedulers()
-	api := &APIHandler{a}
+
+	// FIX: Explicitly name the field during struct initialization
+	api := &APIHandler{app: a}
+
 	r := a.Router
 	api.RegisterAPI()
 
@@ -330,7 +427,7 @@ func (a *App) Run(addr string) error {
 
 </file>
 
-<file path="app\clients\radio.go">
+<file path="app/clients/radio.go">
 package clients
 
 import (
@@ -409,7 +506,7 @@ func (rc *RadioClient) Record(ctx context.Context, show *types.Show) error {
 
 </file>
 
-<file path="app\db\client.go">
+<file path="app/db/client.go">
 package db
 
 import "github.com/david22573/GoRadio/app/types"
@@ -436,7 +533,7 @@ type Client interface {
 
 </file>
 
-<file path="app\db\sqlite\helpers.go">
+<file path="app/db/sqlite/helpers.go">
 package sqlite
 
 import (
@@ -560,7 +657,7 @@ func scanStation(rows *sql.Rows) (types.Station, error) {
 
 </file>
 
-<file path="app\db\sqlite\sqlite.go">
+<file path="app/db/sqlite/sqlite.go">
 package sqlite
 
 import (
@@ -686,7 +783,7 @@ func (c *Client) DeleteShow(id uint) error {
 
 </file>
 
-<file path="app\db\sqlite\sqlite_test.go">
+<file path="app/db/sqlite/sqlite_test.go">
 package sqlite_test
 
 import (
@@ -803,12 +900,12 @@ func TestShowCRUD(t *testing.T) {
 
 </file>
 
-<file path="app\schedulers\counter.go">
+<file path="app/schedulers/counter.go">
 package schedulers
 
 </file>
 
-<file path="app\schedulers\radio.go">
+<file path="app/schedulers/radio.go">
 package schedulers
 
 import (
@@ -946,7 +1043,7 @@ func (s *RadioScheduler) CancelShow(showID uint) error {
 
 </file>
 
-<file path="app\store\actions.go">
+<file path="app/store/actions.go">
 package store
 
 import "github.com/david22573/GoRadio/app/types"
@@ -972,7 +1069,7 @@ type RadioActions interface {
 
 </file>
 
-<file path="app\store\radio.go">
+<file path="app/store/radio.go">
 package store
 
 import (
@@ -1041,7 +1138,7 @@ func (s *radioStore) Close() error {
 
 </file>
 
-<file path="app\types\radio.go">
+<file path="app/types/radio.go">
 package types
 
 type Station struct {
@@ -1052,7 +1149,7 @@ type Station struct {
 
 </file>
 
-<file path="app\types\show.go">
+<file path="app/types/show.go">
 package types
 
 import (
@@ -1113,7 +1210,7 @@ func (s *ShowDuration) UnmarshalJSON(b []byte) error {
 
 </file>
 
-<file path="cmd\app\main.go">
+<file path="cmd/app/main.go">
 package main
 
 import (
@@ -1165,23 +1262,53 @@ func main() {
 
 </file>
 
-<file path="frontend\src\app.css">
+<file path="frontend/src/app.css">
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+	.material-symbols-outlined {
+		font-family: 'Material Symbols Outlined';
+		font-weight: normal;
+		font-style: normal;
+		font-size: 24px;
+		line-height: 1;
+		letter-spacing: normal;
+		text-transform: none;
+		display: inline-block;
+		white-space: nowrap;
+		word-wrap: normal;
+		direction: ltr;
+		font-feature-settings: 'liga';
+		-webkit-font-feature-settings: 'liga';
+		-webkit-font-smoothing: antialiased;
+		font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+		vertical-align: middle;
+	}
 
-body {
-	background-color: #2a2a2a;
-	color: white;
-	max-height: 100dvh;
-	overflow: hidden;
+	::-webkit-scrollbar { width: 8px; }
+	::-webkit-scrollbar-track { background: #0e0e0e; }
+	::-webkit-scrollbar-thumb { background: #262626; border-radius: 4px; }
+}
+
+@layer utilities {
+	.glass-card {
+		background: rgba(38, 38, 38, 0.7);
+		backdrop-filter: blur(24px);
+	}
+	.hero-gradient {
+		background: linear-gradient(180deg, rgba(94, 180, 255, 0.15) 0%, rgba(14, 14, 14, 0) 100%);
+	}
 }
 </file>
 
-<file path="frontend\src\app.html">
+<file path="frontend/src/app.html">
 <!doctype html>
-<html lang="en">
+<html
+	lang="en"
+	class="dark"
+>
 
 <head>
 	<meta charset="utf-8" />
@@ -1193,17 +1320,175 @@ body {
 		name="viewport"
 		content="width=device-width, initial-scale=1"
 	/>
+	<link
+		rel="preconnect"
+		href="https://fonts.googleapis.com"
+	>
+	<link
+		rel="preconnect"
+		href="https://fonts.gstatic.com"
+		crossorigin
+	>
+	<link
+		href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap"
+		rel="stylesheet"
+	/>
+	<link
+		href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+		rel="stylesheet"
+	/>
 	%sveltekit.head%
 </head>
 
-<body data-sveltekit-preload-data="hover">
+<body
+	data-sveltekit-preload-data="hover"
+	class="bg-background text-on-surface font-body overflow-hidden"
+>
 	<div style="display: contents">%sveltekit.body%</div>
 </body>
 
 </html>
 </file>
 
-<file path="frontend\src\lib\components\nav\Logo.svelte">
+<file path="frontend/src/lib/components/DiscoverCard.svelte">
+<script lang="ts">
+	import { player } from '$lib/player.svelte';
+
+	let { result, onAdd } = $props<{
+		result: any;
+		onAdd: (result: any) => void;
+	}>();
+
+	// Computed state for the preview player
+	let previewId = $derived(`preview-${result.stationuuid}`);
+	let isPlayingThis = $derived(player.currentStation?.id === previewId && player.isPlaying);
+	let isLoadingThis = $derived(player.currentStation?.id === previewId && player.isLoading);
+
+	function handlePreview(e: Event) {
+		e.preventDefault();
+		player.play({
+			id: previewId,
+			name: result.name,
+			url: result.url_resolved || result.url
+		});
+	}
+</script>
+
+<div
+	class="bg-surface-container p-5 rounded-2xl border border-outline-variant/10 flex flex-col gap-4 group hover:border-primary/30 transition-colors"
+>
+	<div class="flex justify-between items-start gap-4">
+		<div class="overflow-hidden">
+			<h3 class="font-bold text-white truncate" title={result.name}>{result.name}</h3>
+			<div class="flex items-center gap-2 mt-1">
+				<span class="material-symbols-outlined text-[14px] text-primary">label</span>
+				<p class="text-xs text-on-surface-variant uppercase tracking-widest font-label truncate">
+					{result.tags || 'Generic'}
+				</p>
+			</div>
+		</div>
+		<button
+			onclick={() => onAdd(result)}
+			class="shrink-0 h-10 w-10 rounded-full bg-surface-container-highest hover:bg-primary text-white hover:text-on-primary-fixed flex items-center justify-center transition-all"
+			title="Add to Library"
+		>
+			<span class="material-symbols-outlined text-xl">add</span>
+		</button>
+	</div>
+
+	<button
+		onclick={handlePreview}
+		class="w-full py-2.5 rounded-lg bg-surface-container-highest hover:bg-primary hover:text-on-primary-fixed text-on-surface-variant transition-colors flex items-center justify-center gap-2 text-sm font-bold mt-auto"
+	>
+		{#if isPlayingThis}
+			<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;"
+				>pause</span
+			>
+			Playing
+		{:else if isLoadingThis}
+			<span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+			Connecting
+		{:else}
+			<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;"
+				>play_arrow</span
+			>
+			Preview Stream
+		{/if}
+	</button>
+</div>
+
+</file>
+
+<file path="frontend/src/lib/components/StationCard.svelte">
+<script lang="ts">
+	import { player } from '$lib/player.svelte';
+
+	let { station, onDelete } = $props<{
+		station: any;
+		onDelete: (id: number) => void;
+	}>();
+</script>
+
+<div
+	class="group relative rounded-2xl bg-surface-container-low border border-outline-variant/10 p-6 hover:bg-surface-container transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.4)]"
+>
+	<a href={`/station/${station.id}`} class="absolute inset-0 z-10 rounded-2xl"></a>
+
+	<div class="flex items-start justify-between mb-6 relative z-20">
+		<button
+			onclick={(e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				player.play(station);
+			}}
+			class="h-14 w-14 rounded-xl bg-surface-container-highest flex items-center justify-center text-primary hover:bg-gradient-to-br hover:from-primary hover:to-primary-container hover:text-on-primary-fixed transition-all duration-300 shadow-inner shadow-white/5"
+			title="Play Station"
+		>
+			{#if player.currentStation?.id === station.id && player.isPlaying}
+				<span class="material-symbols-outlined text-3xl" style="font-variation-settings: 'FILL' 1;"
+					>volume_up</span
+				>
+			{:else if player.currentStation?.id === station.id && player.isLoading}
+				<span class="material-symbols-outlined text-3xl animate-spin">progress_activity</span>
+			{:else}
+				<span class="material-symbols-outlined text-3xl" style="font-variation-settings: 'FILL' 1;"
+					>play_arrow</span
+				>
+			{/if}
+		</button>
+
+		<button
+			onclick={(e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				onDelete(station.id);
+			}}
+			class="h-10 w-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"
+			title="Delete Station"
+		>
+			<span class="material-symbols-outlined">delete</span>
+		</button>
+	</div>
+
+	<div>
+		<h3
+			class="font-headline font-bold text-xl text-white mb-1.5 truncate group-hover:text-primary transition-colors"
+		>
+			{station.name}
+		</h3>
+		<div class="flex items-center gap-2">
+			<span class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+			></span>
+			<p class="text-xs text-on-surface-variant font-label uppercase tracking-widest truncate">
+				{station.url}
+			</p>
+		</div>
+	</div>
+</div>
+
+</file>
+
+<file path="frontend/src/lib/components/nav/Logo.svelte">
 <a href="/" class="flex items-center">
 	<div class="flex bg-white w-fit p-2 rounded-lg">
 		<img src="/logo.svg" alt="GoRadio" class="h-10 md:h-14 mr-3" />
@@ -1214,7 +1499,7 @@ body {
 
 </file>
 
-<file path="frontend\src\lib\components\nav\Nav.svelte">
+<file path="frontend/src/lib/components/nav/Nav.svelte">
 <script>
 	import Logo from './Logo.svelte';
 	let props = $props();
@@ -1226,27 +1511,296 @@ body {
 
 </file>
 
-<file path="frontend\src\lib\index.js">
+<file path="frontend/src/lib/index.js">
 // place files you want to import through the `$lib` alias in this folder.
 
 </file>
 
-<file path="frontend\src\routes\+layout.svelte">
-<script>
-	import '../app.css';
-	import Nav from '$lib/components/nav/Nav.svelte';
-	let { children } = $props();
-</script>
+<file path="frontend/src/lib/player.svelte.ts">
+class AudioPlayer {
+	currentStation = $state<any>(null);
+	isPlaying = $state(false);
+	isLoading = $state(false);
+	volume = $state(0.75);
 
-<div class="flex flex-col min-h-screen size-full p-4">
-	<Nav />
+	private audio: HTMLAudioElement | null = null;
 
-	{@render children?.()}
-</div>
+	init() {
+		if (typeof window === 'undefined' || this.audio) return;
+
+		this.audio = new Audio();
+		this.audio.volume = this.volume;
+
+		this.audio.addEventListener('playing', () => {
+			this.isPlaying = true;
+			this.isLoading = false;
+		});
+
+		this.audio.addEventListener('pause', () => {
+			this.isPlaying = false;
+		});
+
+		this.audio.addEventListener('waiting', () => {
+			this.isLoading = true;
+		});
+
+		this.audio.addEventListener('error', (e) => {
+			console.error('Stream playback error:', e);
+			this.isPlaying = false;
+			this.isLoading = false;
+		});
+	}
+
+	play(station: any) {
+		this.init();
+		if (!this.audio) return;
+
+		// If it's the same station and already playing, do nothing
+		if (this.currentStation?.id === station.id && this.isPlaying) return;
+
+		this.currentStation = station;
+		this.isLoading = true;
+
+		// For live streams, setting src forces a fresh connection
+		this.audio.src = station.url_resolved || station.url;
+		this.audio.load();
+		this.audio.play().catch((err) => {
+			console.error('Playback failed:', err);
+			this.isLoading = false;
+			this.isPlaying = false;
+		});
+	}
+
+	togglePlay() {
+		if (!this.audio || !this.currentStation) return;
+
+		if (this.isPlaying) {
+			this.audio.pause();
+			// OPTIMIZATION: Sever the connection to stop background buffering
+			this.audio.removeAttribute('src');
+			this.audio.load();
+		} else {
+			this.isLoading = true;
+			// Reconnect the stream
+			this.audio.src = this.currentStation.url_resolved || this.currentStation.url;
+			this.audio.load();
+			this.audio.play().catch(console.error);
+		}
+	}
+
+	setVolume(val: number) {
+		this.volume = Math.max(0, Math.min(1, val));
+		if (this.audio) {
+			this.audio.volume = this.volume;
+		}
+	}
+}
+
+export const player = new AudioPlayer();
 
 </file>
 
-<file path="frontend\src\routes\+page.js">
+<file path="frontend/src/routes/+layout.svelte">
+<script lang="ts">
+	import '../app.css';
+	import { player } from '$lib/player.svelte';
+	let { children } = $props();
+
+	// Volume slider input handler
+	function handleVolume(e: Event) {
+		const target = e.target as HTMLInputElement;
+		player.setVolume(parseFloat(target.value));
+	}
+</script>
+
+<aside
+	class="fixed left-0 top-0 hidden md:flex flex-col h-screen w-64 border-r-0 bg-gradient-to-r from-[#0e0e0e] to-[#262626] py-8 px-6 z-50"
+>
+	<div class="mb-10">
+		<h1 class="text-2xl font-black text-[#5eb4ff] tracking-tighter">GoRadio</h1>
+		<p class="text-on-surface-variant text-xs mt-1 font-label">The Digital Conductor</p>
+	</div>
+	<nav class="flex-1 space-y-4">
+		<a
+			class="flex items-center gap-4 px-4 py-3 rounded-xl text-[#adaaaa] hover:text-[#5eb4ff] hover:bg-[#262626] transition-colors duration-300"
+			href="/"
+		>
+			<span class="material-symbols-outlined">home</span>
+			<span class="font-headline tracking-tight font-bold text-lg">Home</span>
+		</a>
+		<a
+			class="flex items-center gap-4 px-4 py-3 rounded-xl text-[#adaaaa] hover:text-[#5eb4ff] hover:bg-[#262626] transition-colors duration-300"
+			href="/"
+		>
+			<span class="material-symbols-outlined">explore</span>
+			<span class="font-headline tracking-tight font-bold text-lg">Discover</span>
+		</a>
+		<a
+			class="flex items-center gap-4 px-4 py-3 rounded-xl text-[#5eb4ff] font-bold border-r-4 border-[#5eb4ff] bg-[#262626]/30"
+			href="/"
+		>
+			<span class="material-symbols-outlined">podcasts</span>
+			<span class="font-headline tracking-tight font-bold text-lg">Your Shows</span>
+		</a>
+		<a
+			class="flex items-center gap-4 px-4 py-3 rounded-xl text-[#adaaaa] hover:text-[#5eb4ff] hover:bg-[#262626] transition-colors duration-300"
+			href="/"
+		>
+			<span class="material-symbols-outlined">favorite</span>
+			<span class="font-headline tracking-tight font-bold text-lg">Liked Stations</span>
+		</a>
+	</nav>
+	<div class="mt-auto">
+		<button
+			class="w-full py-4 rounded-xl bg-gradient-to-br from-primary to-primary-container text-on-primary-fixed font-headline font-extrabold uppercase tracking-widest text-sm transition-transform active:scale-95 duration-200"
+		>
+			Go Premium
+		</button>
+	</div>
+</aside>
+
+<header
+	class="fixed top-0 right-0 w-full md:w-[calc(100%-16rem)] h-16 bg-[#0e0e0e]/70 backdrop-blur-xl flex justify-between items-center px-8 z-40"
+>
+	<div class="flex items-center gap-4 w-1/2">
+		<div class="relative w-full max-w-md">
+			<span
+				class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant"
+				>search</span
+			>
+			<input
+				class="w-full bg-surface-container-highest border-none rounded-full py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-primary text-white focus:outline-none"
+				placeholder="Search frequencies..."
+				type="text"
+			/>
+		</div>
+	</div>
+	<div class="flex items-center gap-6">
+		<button
+			class="text-on-surface-variant hover:text-white transition-opacity opacity-80 hover:opacity-100"
+		>
+			<span class="material-symbols-outlined">notifications</span>
+		</button>
+		<button
+			class="text-on-surface-variant hover:text-white transition-opacity opacity-80 hover:opacity-100"
+		>
+			<span class="material-symbols-outlined">settings</span>
+		</button>
+		<div
+			class="h-10 w-10 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant/20"
+		>
+			<img
+				alt="User profile"
+				class="w-full h-full object-cover"
+				src="https://lh3.googleusercontent.com/aida-public/AB6AXuBFjaiFWW1M1PMR8v5YBY_oTZADhJVu-wqZfHMdcr-PznYUwfSy1MASJ3Cn8NWW31x8U6aDApDnZipiBV58Wsc-DPDV93DxwT6DZAEQJ17bF208jbkGprzFNbHvBWKpIw-CyrJZHadp-YELQKJPwdbRTHVhdfWNG5D8QK5AhkxEHrdcEQtdOHMwhckwrgV2sgv6BS8RtipPxhvYm--JDhPIVmk0_0h6lEyijCoZCNQOskLb0r12D4dtyXDkAA9_CHIjULSLS4B5aP0"
+			/>
+		</div>
+	</div>
+</header>
+
+<div class="ml-0 md:ml-64 mt-16 h-[calc(100vh-64px)] overflow-y-auto pb-32 relative z-10">
+	{@render children?.()}
+</div>
+
+<footer
+	class="fixed bottom-0 left-0 w-full z-50 flex items-center justify-between px-12 py-4 bg-[#262626]/80 backdrop-blur-[24px] h-24 rounded-t-[3rem] border-t border-white/5 shadow-[0_-20px_40px_rgba(0,0,0,0.5)]"
+>
+	<div class="flex items-center gap-4 w-1/4">
+		<div
+			class="h-14 w-14 rounded-xl overflow-hidden shrink-0 bg-surface-container flex items-center justify-center border border-white/5"
+		>
+			{#if player.currentStation}
+				<span class="material-symbols-outlined text-3xl text-primary">radio</span>
+			{:else}
+				<span class="material-symbols-outlined text-2xl text-on-surface-variant">music_off</span>
+			{/if}
+		</div>
+		<div class="overflow-hidden">
+			<h5 class="text-sm font-bold text-white truncate">
+				{player.currentStation?.name || 'Ready to Broadcast'}
+			</h5>
+			{#if player.isPlaying}
+				<div class="flex items-center gap-2 mt-0.5">
+					<span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+					<p class="text-xs text-primary font-medium">LIVE</p>
+				</div>
+			{:else if player.currentStation}
+				<p class="text-xs text-on-surface-variant font-medium mt-0.5">Tuned Out</p>
+			{/if}
+		</div>
+	</div>
+
+	<div class="flex flex-col items-center gap-2 flex-1 max-w-lg">
+		<div class="flex items-center gap-8">
+			<button
+				disabled={!player.currentStation}
+				onclick={() => player.togglePlay()}
+				class="h-14 w-14 rounded-full bg-gradient-to-br from-primary to-primary-container flex items-center justify-center text-on-primary-fixed hover:scale-110 active:scale-95 transition-all shadow-[0_0_20px_rgba(94,180,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+			>
+				{#if player.isLoading}
+					<span class="material-symbols-outlined text-4xl animate-spin">progress_activity</span>
+				{:else if player.isPlaying}
+					<span
+						class="material-symbols-outlined text-4xl"
+						style="font-variation-settings: 'FILL' 1;">pause</span
+					>
+				{:else}
+					<span
+						class="material-symbols-outlined text-4xl"
+						style="font-variation-settings: 'FILL' 1;">play_arrow</span
+					>
+				{/if}
+			</button>
+		</div>
+
+		{#if player.currentStation}
+			<div class="w-full flex justify-center mt-1">
+				{#if player.isPlaying}
+					<div class="flex gap-1 items-end h-4">
+						<div class="w-1 bg-primary rounded-t animate-[bounce_1s_ease-in-out_infinite]"></div>
+						<div
+							class="w-1 bg-primary rounded-t animate-[bounce_1.2s_ease-in-out_infinite_0.1s]"
+						></div>
+						<div
+							class="w-1 bg-primary rounded-t animate-[bounce_0.8s_ease-in-out_infinite_0.2s]"
+						></div>
+						<div
+							class="w-1 bg-primary rounded-t animate-[bounce_1.5s_ease-in-out_infinite_0.3s]"
+						></div>
+						<div
+							class="w-1 bg-primary rounded-t animate-[bounce_1.1s_ease-in-out_infinite_0.4s]"
+						></div>
+					</div>
+				{:else}
+					<span class="text-[10px] font-label text-on-surface-variant uppercase tracking-widest"
+						>Stream Paused</span
+					>
+				{/if}
+			</div>
+		{/if}
+	</div>
+
+	<div class="flex items-center justify-end gap-6 w-1/4">
+		<div class="flex items-center gap-3">
+			<span class="material-symbols-outlined text-on-surface-variant text-xl">
+				{player.volume === 0 ? 'volume_off' : player.volume < 0.5 ? 'volume_down' : 'volume_up'}
+			</span>
+			<input
+				type="range"
+				min="0"
+				max="1"
+				step="0.05"
+				value={player.volume}
+				oninput={handleVolume}
+				class="w-24 accent-primary cursor-pointer"
+			/>
+		</div>
+	</div>
+</footer>
+
+</file>
+
+<file path="frontend/src/routes/+page.js">
 export const load = async ({ fetch }) => {
 	try {
 		const res = await fetch('/api/stations');
@@ -1259,9 +1813,11 @@ export const load = async ({ fetch }) => {
 
 </file>
 
-<file path="frontend\src\routes\+page.svelte">
+<file path="frontend/src/routes/+page.svelte">
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import StationCard from '$lib/components/StationCard.svelte';
+	import DiscoverCard from '$lib/components/DiscoverCard.svelte';
 
 	let { data } = $props();
 
@@ -1281,14 +1837,12 @@ export const load = async ({ fetch }) => {
 
 		isSearching = true;
 		try {
-			// Using one of the main community nodes, filtering out broken streams
-			const res = await fetch(
-				`https://de1.api.radio-browser.info/json/stations/search?name=${encodeURIComponent(searchQuery)}&limit=12&hidebroken=true`
-			);
+			const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
+			if (!res.ok) throw new Error('Search failed');
 			searchResults = await res.json();
 		} catch (err) {
 			console.error(err);
-			alert('Failed to fetch from Radio-Browser');
+			alert('Failed to fetch stations');
 		} finally {
 			isSearching = false;
 		}
@@ -1296,13 +1850,11 @@ export const load = async ({ fetch }) => {
 
 	async function addFromSearch(result: any) {
 		try {
-			// url_resolved is better because it bypasses redirects
 			const res = await fetch('/api/stations', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name: result.name, url: result.url_resolved || result.url })
 			});
-
 			if (res.ok) {
 				await invalidateAll();
 			} else {
@@ -1325,7 +1877,6 @@ export const load = async ({ fetch }) => {
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name: customName, url: customUrl })
 			});
-
 			if (res.ok) {
 				customName = '';
 				customUrl = '';
@@ -1358,113 +1909,367 @@ export const load = async ({ fetch }) => {
 	}
 </script>
 
-<div class="max-w-6xl mx-auto space-y-12 mt-8 px-4 pb-12">
+<div class="max-w-7xl mx-auto space-y-16 mt-8 px-8 pb-12">
 	<section>
-		<h2 class="text-3xl font-bold mb-6 text-sky-400">Your Stations</h2>
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+		<div class="flex items-center justify-between mb-8">
+			<h2 class="font-headline text-3xl md:text-4xl font-extrabold tracking-tighter text-white">
+				Your Frequencies
+			</h2>
+			<span
+				class="px-4 py-1.5 rounded-full bg-surface-container-highest text-primary font-label text-xs font-bold uppercase tracking-widest border border-outline-variant/10"
+			>
+				{data.stations?.length || 0} Saved
+			</span>
+		</div>
+
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 			{#if data.stations && data.stations.length > 0}
-				{#each data.stations as station}
-					<div
-						class="bg-zinc-800 p-5 rounded-xl shadow-lg border border-zinc-700 flex flex-col gap-4"
-					>
-						<div class="flex justify-between items-start">
-							<h3 class="text-xl font-bold truncate pr-4 text-zinc-100">{station.name}</h3>
-							<button
-								onclick={() => deleteStation(station.id)}
-								class="text-red-400 hover:text-red-300 text-sm font-medium transition-colors"
-							>
-								Delete
-							</button>
-						</div>
-						<audio src={station.url} controls class="w-full h-10 rounded outline-none"></audio>
-					</div>
+				{#each data.stations as station (station.id)}
+					<StationCard {station} onDelete={deleteStation} />
 				{/each}
 			{:else}
 				<div
-					class="col-span-full text-center py-12 text-zinc-500 bg-zinc-800/50 rounded-xl border border-zinc-700 border-dashed"
+					class="col-span-full flex flex-col items-center justify-center py-20 text-center bg-surface-container-low rounded-3xl border border-outline-variant/10 border-dashed"
 				>
-					No saved stations yet. Search below to add some.
+					<span class="material-symbols-outlined text-6xl text-on-surface-variant mb-4 opacity-50"
+						>sensors_off</span
+					>
+					<h3 class="text-xl font-bold text-white mb-2">No stations tuned in</h3>
+					<p class="text-on-surface-variant max-w-sm">
+						Use the search below to discover global broadcasts or manually add a direct stream URL.
+					</p>
 				</div>
 			{/if}
 		</div>
 	</section>
 
-	<section class="bg-zinc-800 p-6 rounded-xl shadow-lg border border-zinc-700">
-		<h2 class="text-2xl font-bold mb-4 text-sky-400">Discover Stations</h2>
-		<form onsubmit={searchStations} class="flex flex-col md:flex-row gap-4 mb-6">
-			<input
-				type="text"
-				bind:value={searchQuery}
-				placeholder="Search by name, genre, or location..."
-				class="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:border-sky-500 text-white"
-				required
-			/>
-			<button
-				type="submit"
-				disabled={isSearching}
-				class="bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2 px-6 rounded-lg transition-colors disabled:opacity-50"
-			>
-				{isSearching ? 'Searching...' : 'Search'}
-			</button>
-		</form>
+	<section
+		class="p-8 rounded-3xl bg-surface-container-low border border-outline-variant/10 shadow-2xl shadow-black/50 relative overflow-hidden"
+	>
+		<div
+			class="absolute -top-32 -right-32 w-96 h-96 bg-primary/5 rounded-full blur-[100px] pointer-events-none"
+		></div>
 
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-			{#each searchResults as result}
-				<div class="bg-zinc-900 p-4 rounded-lg border border-zinc-700 flex flex-col gap-3">
-					<div class="flex justify-between items-start gap-2">
-						<div class="overflow-hidden">
-							<h3 class="font-bold text-zinc-100 truncate" title={result.name}>{result.name}</h3>
-							<p class="text-xs text-zinc-400 truncate">{result.tags || 'No tags'}</p>
-						</div>
-						<button
-							onclick={() => addFromSearch(result)}
-							class="shrink-0 bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium py-1.5 px-3 rounded transition-colors"
-						>
-							Add +
-						</button>
-					</div>
-					<audio
-						src={result.url_resolved || result.url}
-						controls
-						preload="none"
-						class="w-full h-8 rounded outline-none"
-					></audio>
+		<div class="relative z-10">
+			<h2
+				class="font-headline text-3xl font-extrabold tracking-tighter mb-6 text-white flex items-center gap-3"
+			>
+				<span class="material-symbols-outlined text-primary">explore</span>
+				Discover
+			</h2>
+
+			<form onsubmit={searchStations} class="flex flex-col md:flex-row gap-4 mb-8">
+				<div class="relative flex-1">
+					<span
+						class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant"
+						>search</span
+					>
+					<input
+						type="text"
+						bind:value={searchQuery}
+						placeholder="Search by genre, callsign, or city..."
+						class="w-full bg-surface-container-highest border border-outline-variant/20 rounded-xl py-4 pl-12 pr-4 text-sm focus:ring-2 focus:ring-primary text-white focus:outline-none transition-all"
+						required
+					/>
 				</div>
-			{/each}
+				<button
+					type="submit"
+					disabled={isSearching}
+					class="bg-white hover:bg-gray-200 text-black font-headline font-bold py-4 px-8 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+				>
+					{isSearching ? 'Scanning...' : 'Scan Airways'}
+					{#if !isSearching}
+						<span class="material-symbols-outlined text-sm">radar</span>
+					{/if}
+				</button>
+			</form>
+
+			{#if searchResults.length > 0}
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+					{#each searchResults as result (result.stationuuid)}
+						<DiscoverCard {result} {onAdd} />
+					{/each}
+				</div>
+			{/if}
 		</div>
 	</section>
 
-	<section class="bg-zinc-800/50 p-6 rounded-xl shadow border border-zinc-700 border-dashed">
-		<h3 class="text-lg font-bold mb-4 text-zinc-300">Add via Custom URL</h3>
-		<form onsubmit={addCustomStation} class="flex flex-col md:flex-row gap-4">
-			<input
-				type="text"
-				bind:value={customName}
-				placeholder="Station Name"
-				class="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:border-sky-500 text-white"
-				required
-			/>
-			<input
-				type="url"
-				bind:value={customUrl}
-				placeholder="Stream URL (http://...)"
-				class="flex-[2] bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:border-sky-500 text-white"
-				required
-			/>
-			<button
-				type="submit"
-				disabled={isSubmitting}
-				class="bg-zinc-700 hover:bg-zinc-600 text-white font-medium py-2 px-6 rounded-lg transition-colors disabled:opacity-50"
-			>
-				{isSubmitting ? 'Adding...' : 'Add'}
-			</button>
-		</form>
+	<section class="p-8 rounded-3xl bg-surface-container border border-outline-variant/10">
+		<div class="max-w-3xl">
+			<h3 class="font-headline text-xl font-bold mb-2 text-white flex items-center gap-2">
+				<span class="material-symbols-outlined text-tertiary-fixed">link</span>
+				Direct Stream Connection
+			</h3>
+			<p class="text-sm text-on-surface-variant mb-6">
+				Have a private icecast or shoutcast link? Manually patch it into your library here.
+			</p>
+
+			<form onsubmit={addCustomStation} class="flex flex-col md:flex-row gap-4">
+				<input
+					type="text"
+					bind:value={customName}
+					placeholder="Station Identity"
+					class="flex-1 bg-surface-container-highest border border-outline-variant/20 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary text-white focus:outline-none"
+					required
+				/>
+				<input
+					type="url"
+					bind:value={customUrl}
+					placeholder="wss:// or http://..."
+					class="flex-[2] bg-surface-container-highest border border-outline-variant/20 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary text-white focus:outline-none"
+					required
+				/>
+				<button
+					type="submit"
+					disabled={isSubmitting}
+					class="bg-surface-container-highest hover:bg-surface-variant text-white border border-outline-variant/20 font-headline font-bold py-3 px-8 rounded-xl transition-colors disabled:opacity-50"
+				>
+					{isSubmitting ? 'Patching...' : 'Connect'}
+				</button>
+			</form>
+		</div>
 	</section>
 </div>
 
 </file>
 
-<file path="frontend\vitest-setup-client.js">
+<file path="frontend/src/routes/station/[id]/+page.js">
+export const load = async ({ fetch, params }) => {
+	try {
+		const res = await fetch('/api/stations');
+		const data = await res.json();
+
+		const station = data.stations?.find((s) => s.id === parseInt(params.id));
+
+		if (!station) {
+			return { status: 404, error: new Error('Station not found') };
+		}
+
+		return { station };
+	} catch (error) {
+		console.error(error);
+		return { status: 500, error };
+	}
+};
+
+</file>
+
+<file path="frontend/src/routes/station/[id]/+page.svelte">
+<script lang="ts">
+	import { invalidateAll } from '$app/navigation';
+	import { player } from '$lib/player.svelte';
+
+	let { data } = $props();
+
+	let stationName = $state(data.station?.name || '');
+	let stationUrl = $state(data.station?.url || '');
+
+	async function updateStation(e: Event) {
+		e.preventDefault();
+		try {
+			const res = await fetch(`/api/stations/${data.station.id}`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: stationName, url: stationUrl })
+			});
+			if (res.ok) await invalidateAll();
+			else alert('Error updating station');
+		} catch (err) {
+			console.error(err);
+		}
+	}
+
+	async function deleteStation() {
+		if (!confirm('Delete this station?')) return;
+		try {
+			const res = await fetch(`/api/stations/${data.station.id}`, { method: 'DELETE' });
+			if (res.ok) {
+				window.location.href = '/';
+			} else alert('Error deleting station');
+		} catch (err) {
+			console.error(err);
+		}
+	}
+</script>
+
+<main class="h-full">
+	<section class="relative px-8 pt-12 pb-16 hero-gradient overflow-hidden">
+		<div class="flex flex-col md:flex-row gap-10 items-end relative z-10">
+			<div
+				class="w-64 h-64 shrink-0 rounded-xl overflow-hidden shadow-[0_20px_40px_rgba(0,0,0,0.6)] relative group bg-surface-container-highest"
+			>
+				<img
+					alt="Station Art"
+					class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+					src="https://lh3.googleusercontent.com/aida-public/AB6AXuBdl783Gx32qan-8ff4rvZ0ayMAJQkt1M3SfFIfA6nl5r1eclzBY3z9q_pB_bGgE4hp9EDr2-n6cTmKkq51dqobXXeCvjD03phybkoo2Wm0lkqm3s1kcMgtuBIcUbjr0rE2usYfb0c1vUQTHFupsALOPRIpVoI5nt1VArzId5oszyNs7ErcKiIF_Wh7_r1TCD8oCUJbbwvExfPNW3pzyjoI9j1kbxm_FBSPq3Z2OlJZOvkmHPnJEr_eLHQQnYdMnCHyloCJASLDxv0"
+				/>
+				<div
+					class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+				>
+					<span class="material-symbols-outlined text-white text-6xl">graphic_eq</span>
+				</div>
+			</div>
+			<div class="flex-1">
+				<div class="flex items-center gap-3 mb-2">
+					<span
+						class="px-3 py-1 rounded-full bg-primary/20 text-primary text-[10px] font-label font-bold uppercase tracking-widest"
+						>Live Broadcast</span
+					>
+					<span class="text-on-surface-variant font-label text-sm uppercase tracking-tighter"
+						>Stereo Audio</span
+					>
+				</div>
+				<h2
+					class="font-headline text-5xl md:text-7xl font-extrabold tracking-tighter mb-6 text-white"
+				>
+					{stationName}
+				</h2>
+				<div class="flex items-center gap-4">
+					<button
+						onclick={() => player.play(data.station)}
+						class="flex items-center gap-3 px-8 py-4 rounded-full bg-gradient-to-br from-primary to-primary-container text-on-primary-fixed font-headline font-bold text-lg hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary/20"
+					>
+						{#if player.currentStation?.id === data.station.id && player.isPlaying}
+							<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;"
+								>volume_up</span
+							>
+							Playing
+						{:else}
+							<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;"
+								>play_arrow</span
+							>
+							Play Now
+						{/if}
+					</button>
+
+					<button
+						class="h-14 w-14 rounded-full flex items-center justify-center border border-outline-variant/30 text-on-surface hover:bg-surface-container-highest transition-colors"
+					>
+						<span class="material-symbols-outlined">favorite</span>
+					</button>
+					<button
+						class="h-14 w-14 rounded-full flex items-center justify-center border border-outline-variant/30 text-on-surface hover:bg-surface-container-highest transition-colors"
+					>
+						<span class="material-symbols-outlined">share</span>
+					</button>
+				</div>
+			</div>
+		</div>
+		<div class="absolute -top-32 -left-32 w-96 h-96 bg-primary/10 rounded-full blur-[120px]"></div>
+	</section>
+
+	<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 px-8 pb-12">
+		<section class="lg:col-span-2 space-y-6">
+			<div class="flex items-center justify-between">
+				<h3
+					class="font-headline text-2xl font-bold tracking-tight text-white flex items-center gap-2"
+				>
+					<span class="material-symbols-outlined text-primary">history_edu</span>
+					Recent Recordings
+				</h3>
+				<button
+					class="text-primary text-sm font-label font-bold uppercase tracking-wider hover:underline"
+					>View All</button
+				>
+			</div>
+
+			<div class="space-y-3">
+				<div
+					class="flex items-center justify-between p-4 rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors group"
+				>
+					<div class="flex items-center gap-4">
+						<div
+							class="h-12 w-12 rounded-lg bg-surface-container-highest flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary-fixed transition-colors"
+						>
+							<span class="material-symbols-outlined">mic</span>
+						</div>
+						<div>
+							<h4 class="text-sm font-bold text-white">Midnight Synth Sessions Vol. 4</h4>
+							<p
+								class="text-xs text-on-surface-variant font-label uppercase tracking-widest mt-0.5"
+							>
+								REC_20231024_AAC • 12.4 MB
+							</p>
+						</div>
+					</div>
+					<div class="flex items-center gap-6">
+						<span class="text-xs text-on-surface-variant font-label tracking-widest">48:12</span>
+						<button class="text-primary hover:scale-110 transition-transform">
+							<span class="material-symbols-outlined">play_circle</span>
+						</button>
+						<button class="text-on-surface-variant hover:text-white transition-colors">
+							<span class="material-symbols-outlined">more_vert</span>
+						</button>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<section class="space-y-6">
+			<div class="p-8 rounded-xl bg-surface-container-low border border-outline-variant/10">
+				<h3 class="font-headline text-xl font-bold mb-6 text-white">Station Settings</h3>
+				<form onsubmit={updateStation} class="space-y-6">
+					<div>
+						<label
+							class="block text-xs font-label uppercase tracking-widest text-on-surface-variant mb-2"
+							>Station Name</label
+						>
+						<input
+							bind:value={stationName}
+							class="w-full bg-surface-container-highest border-none rounded-lg p-3 text-sm focus:ring-1 focus:ring-primary text-on-surface"
+							type="text"
+						/>
+					</div>
+					<div>
+						<label
+							class="block text-xs font-label uppercase tracking-widest text-on-surface-variant mb-2"
+							>Broadcast URL</label
+						>
+						<input
+							bind:value={stationUrl}
+							class="w-full bg-surface-container-highest border-none rounded-lg p-3 text-sm focus:ring-1 focus:ring-primary text-on-surface"
+							type="url"
+						/>
+					</div>
+					<div class="pt-4 space-y-3">
+						<button
+							type="submit"
+							class="w-full py-3 rounded-lg bg-surface-container-highest text-white font-bold text-sm hover:bg-surface-variant transition-colors border border-outline-variant/20"
+						>
+							Update Information
+						</button>
+						<button
+							type="button"
+							onclick={deleteStation}
+							class="w-full py-3 rounded-lg text-error text-sm font-bold hover:bg-error/10 transition-colors"
+						>
+							Delete Station
+						</button>
+					</div>
+				</form>
+			</div>
+
+			<div class="p-6 rounded-xl bg-surface-container shadow-inner grid grid-cols-2 gap-4">
+				<div class="bg-surface-container-lowest p-4 rounded-lg">
+					<p class="text-[10px] font-label text-on-surface-variant uppercase tracking-widest mb-1">
+						Peak Listeners
+					</p>
+					<p class="text-2xl font-headline font-extrabold text-primary">12.4K</p>
+				</div>
+				<div class="bg-surface-container-lowest p-4 rounded-lg">
+					<p class="text-[10px] font-label text-on-surface-variant uppercase tracking-widest mb-1">
+						Uptime
+					</p>
+					<p class="text-2xl font-headline font-extrabold text-secondary">99.8%</p>
+				</div>
+			</div>
+		</section>
+	</div>
+</main>
+
+</file>
+
+<file path="frontend/vitest-setup-client.js">
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 
@@ -1486,14 +2291,3 @@ Object.defineProperty(window, 'matchMedia', {
 
 </file>
 
-
-
-```json
-{
-  "total_bytes": 35354,
-  "file_count": 24,
-  "estimated_tokens": 9306,
-  "mode": "full",
-  "generated_at": "2026-04-01T10:41:21.8060276-07:00"
-}
-```

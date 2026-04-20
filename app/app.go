@@ -11,7 +11,12 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/david22573/GoRadio/app/config"
 	"github.com/david22573/GoRadio/app/db"
+	"github.com/david22573/GoRadio/app/db/sqlite"
+	"github.com/david22573/GoRadio/app/queue"
+	"github.com/david22573/GoRadio/app/services/similarity"
+	"github.com/david22573/GoRadio/app/session"
 	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/go-co-op/gocron/v2"
@@ -26,6 +31,11 @@ type App struct {
 	Ctx    context.Context
 	cancel context.CancelFunc
 
+	Features config.FeatureFlags
+
+	SessionMgr *session.Manager
+	QueueMgr   *queue.Manager
+
 	schedulers []gocron.Scheduler
 	mu         sync.Mutex
 	httpSrv    *http.Server
@@ -35,11 +45,24 @@ func NewApp(database db.Client) (*App, error) {
 	r := gin.Default()
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Cast to sqlite.Client to use vector features
+	sqliteClient, ok := database.(*sqlite.Client)
+	if !ok {
+		return nil, fmt.Errorf("database must be a sqlite.Client")
+	}
+
+	sessionMgr := session.NewManager(sqliteClient)
+	similarityEng := similarity.NewEngine(sqliteClient)
+	queueMgr := queue.NewManager(sessionMgr, similarityEng, sqliteClient)
+
 	return &App{
-		Router: r,
-		DB:     database,
-		Ctx:    ctx,
-		cancel: cancel,
+		Router:     r,
+		DB:         database,
+		Ctx:        ctx,
+		cancel:     cancel,
+		Features:   config.LoadFeatureFlags(),
+		SessionMgr: sessionMgr,
+		QueueMgr:   queueMgr,
 
 		schedulers: []gocron.Scheduler{},
 	}, nil

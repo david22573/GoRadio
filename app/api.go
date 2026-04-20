@@ -10,6 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/david22573/GoRadio/app/config"
+	"github.com/david22573/GoRadio/app/db/sqlite"
+	"github.com/david22573/GoRadio/app/session"
 	"github.com/david22573/GoRadio/app/types"
 	"github.com/gin-gonic/gin"
 )
@@ -64,7 +67,7 @@ func (a *APIHandler) RegisterAPI() {
 	api := a.app.Router.Group("/api")
 	{
 		api.GET("/ping", func(c *gin.Context) { c.JSON(200, gin.H{"message": "pong"}) })
-		api.GET("/search", a.SearchStations) // New Route
+		api.GET("/search", a.SearchStations)
 
 		api.GET("/stations", a.GetStations)
 		api.POST("/stations", a.CreateStation)
@@ -75,6 +78,23 @@ func (a *APIHandler) RegisterAPI() {
 		api.POST("/shows", a.CreateShow)
 		api.PUT("/shows/:id", a.UpdateShow)
 		api.DELETE("/shows/:id", a.DeleteShow)
+
+		// Session management
+		api.POST("/sessions", a.CreateSession)
+		api.GET("/sessions/:id", a.GetSession)
+
+		// Queue management
+		api.GET("/queue/:sessionId", a.GetQueue)
+		api.POST("/queue/:sessionId/advance", a.AdvanceQueue)
+		api.GET("/queue/:sessionId/upcoming", a.GetUpcoming)
+
+		// Events
+		api.POST("/events/play", a.RecordPlayEvent)
+		api.POST("/events/skip", a.RecordSkipEvent)
+
+		// Analytics
+		api.GET("/sessions/:id/metrics", a.GetSessionMetrics)
+		api.GET("/sessions/:id/journey", a.GetSessionJourney)
 	}
 }
 
@@ -228,6 +248,153 @@ func (a *APIHandler) DeleteShow(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"message": "Show deleted successfully"})
+}
+
+// Session Handlers
+func (a *APIHandler) CreateSession(c *gin.Context) {
+	var req struct {
+		SeedTrackID uint `json:"seed_track_id"`
+	}
+	if err := c.Bind(&req); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	s, err := a.app.SessionMgr.CreateSession(c.Request.Context(), req.SeedTrackID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(201, s)
+}
+
+func (a *APIHandler) GetSession(c *gin.Context) {
+	id := c.Param("id")
+	s, err := a.app.SessionMgr.GetSession(id)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "session not found"})
+		return
+	}
+	c.JSON(200, s)
+}
+
+// Queue Handlers
+func (a *APIHandler) GetQueue(c *gin.Context) {
+	sessionID := c.Param("sessionId")
+	q, err := a.app.QueueMgr.GetQueue(sessionID)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "queue not found"})
+		return
+	}
+	c.JSON(200, q)
+}
+
+func (a *APIHandler) AdvanceQueue(c *gin.Context) {
+	sessionID := c.Param("sessionId")
+	track, err := a.app.QueueMgr.Advance(c.Request.Context(), sessionID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, track)
+}
+
+func (a *APIHandler) GetUpcoming(c *gin.Context) {
+	sessionID := c.Param("sessionId")
+	q, err := a.app.QueueMgr.GetQueue(sessionID)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "queue not found"})
+		return
+	}
+	c.JSON(200, gin.H{"upcoming": q.Upcoming})
+}
+
+// Event Handlers
+func (a *APIHandler) RecordPlayEvent(c *gin.Context) {
+	var req struct {
+		SessionID  string    `json:"session_id"`
+		TrackID    uint      `json:"track_id"`
+		Completion float64   `json:"completion"`
+		StartedAt  time.Time `json:"started_at"`
+	}
+	if err := c.Bind(&req); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	event := session.PlayEvent{
+		TrackID:     req.TrackID,
+		StartedAt:   req.StartedAt,
+		CompletedAt: time.Now(),
+		Completion:  req.Completion,
+	}
+	if err := a.app.SessionMgr.LogPlayEvent(req.SessionID, event); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Trigger vector evolution
+	s, _ := a.app.SessionMgr.GetSession(req.SessionID)
+	if s != nil {
+		sqliteClient := a.app.DB.(*sqlite.Client)
+		vec, _ := sqliteClient.GetVectorByID(req.TrackID)
+		if vec != nil {
+			s.UpdateVector(event, vec, config.DefaultPlaybackConfig())
+		}
+	}
+
+	c.JSON(200, gin.H{"message": "Event recorded"})
+}
+
+func (a *APIHandler) RecordSkipEvent(c *gin.Context) {
+	var req struct {
+		SessionID string `json:"session_id"`
+		TrackID   uint   `json:"track_id"`
+		PlayedFor int    `json:"played_for"`
+	}
+	if err := c.Bind(&req); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	event := session.SkipEvent{
+		TrackID:   req.TrackID,
+		SkippedAt: time.Now(),
+		PlayedFor: req.PlayedFor,
+	}
+	if err := a.app.SessionMgr.LogSkipEvent(req.SessionID, event); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Trigger vector evolution (skip = low completion)
+	s, _ := a.app.SessionMgr.GetSession(req.SessionID)
+	if s != nil {
+		sqliteClient := a.app.DB.(*sqlite.Client)
+		vec, _ := sqliteClient.GetVectorByID(req.TrackID)
+		if vec != nil {
+			s.UpdateVector(session.PlayEvent{Completion: 0.1}, vec, config.DefaultPlaybackConfig())
+		}
+	}
+
+	c.JSON(200, gin.H{"message": "Event recorded"})
+}
+
+func (a *APIHandler) GetSessionMetrics(c *gin.Context) {
+	id := c.Param("id")
+	s, err := a.app.SessionMgr.GetSession(id)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "session not found"})
+		return
+	}
+	c.JSON(200, s.CalculateMetrics())
+}
+
+func (a *APIHandler) GetSessionJourney(c *gin.Context) {
+	id := c.Param("id")
+	s, err := a.app.SessionMgr.GetSession(id)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "session not found"})
+		return
+	}
+	c.JSON(200, gin.H{"journey": s.GetJourney()})
 }
 
 func getUintParam(c *gin.Context, param string) (uint, error) {

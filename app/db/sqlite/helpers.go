@@ -118,3 +118,19 @@ func scanStation(rows *sql.Rows) (types.Station, error) {
 	}
 	return st, nil
 }
+
+func scanTrack(rows *sql.Rows) (types.Track, error) {
+	var t types.Track
+	err := rows.Scan(
+		&t.ID,
+		&t.StationID,
+		&t.Title,
+		&t.Artist,
+		&t.Duration,
+		&t.AnalyzedAt,
+	)
+	if err != nil {
+		return types.Track{}, err
+	}
+	return t, nil
+}

@@ -8,7 +8,9 @@ import (
 
 	"github.com/david22573/GoRadio/app/types"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/asg017/sqlite-vec-go-bindings/ncruces"
+	_ "github.com/ncruces/go-sqlite3/driver"
+	_ "github.com/ncruces/go-sqlite3/embed"
 )
 
 type Client struct {
@@ -21,7 +23,7 @@ func NewSQLiteClient(filename string) (*Client, error) {
 	}
 
 	dsn := fmt.Sprintf("data/%s", filename)
-	db, err := sql.Open("sqlite", dsn)
+	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -29,38 +31,17 @@ func NewSQLiteClient(filename string) (*Client, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := migrate(db); err != nil {
-		db.Close()
-		return nil, err
-	}
+
+	// Performance Optimization: Connection Pooling
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(time.Hour)
 
 	return &Client{db: db}, nil
 }
 
 func (c *Client) Close() error {
 	return c.db.Close()
-}
-
-func migrate(db *sql.DB) error {
-	schema := `
-    CREATE TABLE IF NOT EXISTS stations (
-        id   INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        url  TEXT NOT NULL UNIQUE
-    );
-    CREATE TABLE IF NOT EXISTS shows (
-        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        name       TEXT NOT NULL UNIQUE,
-        duration   INTEGER NOT NULL,
-        day        INTEGER NOT NULL,
-        hour       INTEGER NOT NULL,
-        min        INTEGER NOT NULL,
-        scheduled  INTEGER NOT NULL DEFAULT 0,
-        station_id INTEGER NOT NULL,
-        FOREIGN KEY(station_id) REFERENCES stations(id) ON DELETE CASCADE
-    );`
-	_, err := db.Exec(schema)
-	return err
 }
 
 func (c *Client) GetAllStations() ([]types.Station, error) {
@@ -119,4 +100,59 @@ func (c *Client) UpdateShow(show *types.Show) error {
 func (c *Client) DeleteShow(id uint) error {
 	_, err := execAffected(c.db, "DELETE FROM shows WHERE id = ?", id)
 	return err
+}
+
+func (c *Client) GetTracksByStation(stationID uint) ([]types.Track, error) {
+	return queryMultiple(c.db, scanTrack, "SELECT id, station_id, title, artist, duration, analyzed_at FROM tracks WHERE station_id = ?", stationID)
+}
+
+func (c *Client) GetTrackByID(id uint) (*types.Track, error) {
+	return querySingle(c.db, scanTrack, "SELECT id, station_id, title, artist, duration, analyzed_at FROM tracks WHERE id = ?", id)
+}
+
+func (c *Client) CreateTrack(track types.Track) (uint, error) {
+	id, err := execInsert(c.db, "INSERT INTO tracks (station_id, title, artist, duration, analyzed_at) VALUES (?, ?, ?, ?, ?)",
+		track.StationID, track.Title, track.Artist, track.Duration, track.AnalyzedAt)
+	return uint(id), err
+}
+
+func (c *Client) CreateTracksBatch(tracks []types.Track) error {
+	tx, err := c.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare("INSERT INTO tracks (station_id, title, artist, duration, analyzed_at) VALUES (?, ?, ?, ?, ?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, t := range tracks {
+		if _, err := stmt.Exec(t.StationID, t.Title, t.Artist, t.Duration, t.AnalyzedAt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (c *Client) GetRandomTrack(excludeIDs []uint) (*types.Track, error) {
+	query := "SELECT id, station_id, title, artist, duration, analyzed_at FROM tracks"
+	var args []interface{}
+
+	if len(excludeIDs) > 0 {
+		query += " WHERE id NOT IN ("
+		for i, id := range excludeIDs {
+			if i > 0 {
+				query += ","
+			}
+			query += "?"
+			args = append(args, id)
+		}
+		query += ")"
+	}
+
+	query += " ORDER BY RANDOM() LIMIT 1"
+	return querySingle(c.db, scanTrack, query, args...)
 }
