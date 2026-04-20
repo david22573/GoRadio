@@ -53,7 +53,7 @@ func main() {
 		}
 
 		// Update vector DB
-		err = db.InsertVector(s.ID, features.Embedding)
+		err = db.InsertTrackVector(s.ID, features.Embedding)
 		if err != nil {
 			log.Printf("  [!] DB Insert failed: %v", err)
 		} else {
