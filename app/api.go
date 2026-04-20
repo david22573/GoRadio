@@ -186,8 +186,8 @@ func (a *APIHandler) SearchTracks(c *gin.Context) {
 			if err := json.NewDecoder(resp.Body).Decode(&globalResults); err == nil {
 				for _, r := range globalResults {
 					tracks = append(tracks, types.Track{
-						Title:  r.Name,
-						Artist: r.Tags,
+						Title:  strings.TrimSpace(r.Name),
+						Artist: strings.TrimSpace(r.Tags),
 						URL:    r.URL,
 					})
 				}

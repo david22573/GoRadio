@@ -5,8 +5,14 @@
 		track: any;
 	}>();
 
-	let isPlayingThis = $derived(player.currentTrack?.id === track.id && player.isPlaying);
-	let isLoadingThis = $derived(player.currentTrack?.id === track.id && player.isLoading);
+	let isPlayingThis = $derived(
+		(player.currentTrack?.id === track.id && track.id !== 0 || player.currentTrack?.url === track.url) && 
+		player.isPlaying
+	);
+	let isLoadingThis = $derived(
+		(player.currentTrack?.id === track.id && track.id !== 0 || player.currentTrack?.url === track.url) && 
+		player.isLoading
+	);
 
 	function handlePlay() {
 		player.startContinuous(track);
