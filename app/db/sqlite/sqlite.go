@@ -44,6 +44,10 @@ func (c *Client) Close() error {
 	return c.db.Close()
 }
 
+func (c *Client) GetDB() *sql.DB {
+	return c.db
+}
+
 func (c *Client) GetAllStations() ([]types.Station, error) {
 	return queryMultiple(c.db, scanStation, "SELECT id, name, url FROM stations")
 }

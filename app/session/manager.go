@@ -43,6 +43,10 @@ func (m *Manager) CreateSession(ctx context.Context, seedTrackID uint) (*Session
 		ExplorationRate: 0.1,
 	}
 
+	if err := m.db.CreateSession(session); err != nil {
+		return nil, fmt.Errorf("failed to persist session: %w", err)
+	}
+
 	m.mu.Lock()
 	m.sessions[session.ID] = session
 	m.mu.Unlock()
@@ -52,15 +56,28 @@ func (m *Manager) CreateSession(ctx context.Context, seedTrackID uint) (*Session
 
 func (m *Manager) GetSession(id string) (*SessionState, error) {
 	m.mu.RLock()
-	session, ok := m.sessions[id]
+	s, ok := m.sessions[id]
 	m.mu.RUnlock()
 
 	if !ok {
-		return nil, fmt.Errorf("session not found")
+		// Try to load from DB
+		var err error
+		s, err = m.db.GetSession(id)
+		if err != nil {
+			return nil, fmt.Errorf("session not found: %w", err)
+		}
+		
+		// Add to cache
+		m.mu.Lock()
+		m.sessions[id] = s
+		m.mu.Unlock()
 	}
 
-	session.LastActivityAt = time.Now()
-	return session, nil
+	s.LastActivityAt = time.Now()
+	// Async update DB
+	go m.db.UpdateSession(s)
+	
+	return s, nil
 }
 
 func (m *Manager) Create(seedTrackID uint) (*SessionState, error) {
@@ -84,7 +101,10 @@ func (m *Manager) RecordPlay(sessionID string, trackID uint, completion float64)
 	if s != nil {
 		vec, _ := m.db.GetVectorByID(trackID)
 		if vec != nil {
-			s.UpdateVector(event, vec, config.DefaultPlaybackConfig())
+			cfg := config.DefaultPlaybackConfig()
+			s.UpdateVector(event.Completion, vec, cfg.SkipThreshold, cfg.ListenThreshold, cfg.MaxExplorationRate, cfg.MinExplorationRate, cfg.VectorLearningRate, cfg.VectorRepulsionRate)
+			// Persist updated vector
+			go m.db.UpdateSession(s)
 		}
 	}
 	return nil
@@ -106,7 +126,10 @@ func (m *Manager) RecordSkip(sessionID string, trackID uint, playedFor int) erro
 	if s != nil {
 		vec, _ := m.db.GetVectorByID(trackID)
 		if vec != nil {
-			s.UpdateVector(PlayEvent{Completion: 0.1}, vec, config.DefaultPlaybackConfig())
+			cfg := config.DefaultPlaybackConfig()
+			s.UpdateVector(0.1, vec, cfg.SkipThreshold, cfg.ListenThreshold, cfg.MaxExplorationRate, cfg.MinExplorationRate, cfg.VectorLearningRate, cfg.VectorRepulsionRate)
+			// Persist updated vector
+			go m.db.UpdateSession(s)
 		}
 	}
 
@@ -138,6 +161,10 @@ func (m *Manager) LogPlayEvent(sessionID string, event PlayEvent) error {
 		return fmt.Errorf("session not found")
 	}
 
+	if err := m.db.RecordPlayEvent(sessionID, event); err != nil {
+		return fmt.Errorf("failed to persist play event: %w", err)
+	}
+
 	s.PlayHistory = append(s.PlayHistory, event)
 	s.LastActivityAt = time.Now()
 
@@ -155,6 +182,10 @@ func (m *Manager) LogSkipEvent(sessionID string, event SkipEvent) error {
 	s, ok := m.sessions[sessionID]
 	if !ok {
 		return fmt.Errorf("session not found")
+	}
+
+	if err := m.db.RecordSkipEvent(sessionID, event); err != nil {
+		return fmt.Errorf("failed to persist skip event: %w", err)
 	}
 
 	s.SkipHistory = append(s.SkipHistory, event)

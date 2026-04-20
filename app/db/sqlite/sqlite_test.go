@@ -18,6 +18,32 @@ func setupTestClient(t *testing.T) *sqlite.Client {
 	if err != nil {
 		t.Fatalf("failed to create test client: %v", err)
 	}
+
+	// Create tables
+	queries := []string{
+		`CREATE TABLE IF NOT EXISTS stations (
+			id   INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			url  TEXT NOT NULL UNIQUE
+		)`,
+		`CREATE TABLE IF NOT EXISTS shows (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			name       TEXT NOT NULL UNIQUE,
+			duration   INTEGER NOT NULL,
+			day        INTEGER NOT NULL,
+			hour       INTEGER NOT NULL,
+			min        INTEGER NOT NULL,
+			scheduled  INTEGER NOT NULL DEFAULT 0,
+			station_id INTEGER NOT NULL,
+			FOREIGN KEY(station_id) REFERENCES stations(id) ON DELETE CASCADE
+		)`,
+	}
+	for _, q := range queries {
+		if _, err := client.GetDB().Exec(q); err != nil {
+			t.Fatalf("failed to create table: %v", err)
+		}
+	}
+
 	t.Cleanup(func() {
 		client.Close()
 		os.Remove("data/" + dbFile)

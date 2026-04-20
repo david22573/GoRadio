@@ -25,6 +25,23 @@ type Client interface {
 	CreateTracksBatch(tracks []types.Track) error
 	GetRandomTrack(excludeIDs []uint) (*types.Track, error)
 
+	// Vectors
+	InsertTrackVector(trackID uint, embedding []float64) error
+	GetTrackVector(trackID uint) ([]float64, error)
+	FindNearestNeighbors(trackID uint, k int, excludeIDs []uint) ([]types.Track, []float64, error)
+	FindDistantNeighbors(trackID uint, minDistance, maxDistance float64, k int) ([]types.Track, error)
+
+	// Sessions
+	CreateSession(session *types.SessionState) error
+	GetSession(id string) (*types.SessionState, error)
+	UpdateSession(session *types.SessionState) error
+	DeleteSession(id string) error
+
+	// Session events
+	RecordPlayEvent(sessionID string, event types.PlayEvent) error
+	RecordSkipEvent(sessionID string, event types.SkipEvent) error
+	GetSessionEvents(sessionID string) ([]types.PlayEvent, []types.SkipEvent, error)
+
 	// Close releases any open resources (like DB connections)
 	Close() error
 }

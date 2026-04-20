@@ -28,7 +28,7 @@ func (e *Engine) FindNearestByVector(ctx context.Context, vector []float64, k in
 	// Simple caching: only if no exclusions for now
 	// In production, we'd use a more sophisticated key
 	
-	neighbors, err := e.db.SearchKNN(vector, k+len(excludeIDs), sqlite.DistanceL2)
+	neighbors, distances, err := e.db.SearchKNNWithDistances(vector, k+len(excludeIDs), sqlite.DistanceL2)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -39,20 +39,22 @@ func (e *Engine) FindNearestByVector(ctx context.Context, vector []float64, k in
 	}
 
 	var resultTracks []types.Track
-	for _, id := range neighbors {
+	var resultDistances []float64
+	for i, id := range neighbors {
 		if excludeMap[id] {
 			continue
 		}
 		track, err := e.db.GetTrackByID(id)
 		if err == nil {
 			resultTracks = append(resultTracks, *track)
+			resultDistances = append(resultDistances, distances[i])
 		}
 		if len(resultTracks) >= k {
 			break
 		}
 	}
 
-	return resultTracks, nil, nil
+	return resultTracks, resultDistances, nil
 }
 
 // FindExplorationByVector finds K tracks furthest from the given vector

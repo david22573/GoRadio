@@ -20,7 +20,7 @@ func TestVectorMovement(t *testing.T) {
 
 	// 1. Test Attraction (Listen)
 	// Move 20% toward target
-	s.UpdateVector(PlayEvent{Completion: 0.9}, target, cfg)
+	s.UpdateVector(0.9, target, cfg.SkipThreshold, cfg.ListenThreshold, cfg.MaxExplorationRate, cfg.MinExplorationRate, cfg.VectorLearningRate, cfg.VectorRepulsionRate)
 	
 	// Check if Y component increased (moved toward target)
 	if s.CurrentVector[1] <= 0 {
@@ -32,7 +32,7 @@ func TestVectorMovement(t *testing.T) {
 	copy(beforeRepulsion, s.CurrentVector)
 	
 	// Skip the same target vector
-	s.UpdateVector(PlayEvent{Completion: 0.1}, target, cfg)
+	s.UpdateVector(0.1, target, cfg.SkipThreshold, cfg.ListenThreshold, cfg.MaxExplorationRate, cfg.MinExplorationRate, cfg.VectorLearningRate, cfg.VectorRepulsionRate)
 	
 	// Check if Y component decreased (moved away from target)
 	if s.CurrentVector[1] >= beforeRepulsion[1] {
@@ -48,14 +48,14 @@ func TestExplorationRateScaling(t *testing.T) {
 	}
 
 	// Skip should increase exploration
-	s.UpdateVector(PlayEvent{Completion: 0.05}, []float64{0.0, 1.0}, cfg)
+	s.UpdateVector(0.05, []float64{0.0, 1.0}, cfg.SkipThreshold, cfg.ListenThreshold, cfg.MaxExplorationRate, cfg.MinExplorationRate, cfg.VectorLearningRate, cfg.VectorRepulsionRate)
 	if s.ExplorationRate <= 0.15 {
 		t.Errorf("Expected exploration rate to increase after skip, got %f", s.ExplorationRate)
 	}
 
 	// Full listen should decrease exploration
 	currentRate := s.ExplorationRate
-	s.UpdateVector(PlayEvent{Completion: 1.0}, []float64{1.0, 0.0}, cfg)
+	s.UpdateVector(1.0, []float64{1.0, 0.0}, cfg.SkipThreshold, cfg.ListenThreshold, cfg.MaxExplorationRate, cfg.MinExplorationRate, cfg.VectorLearningRate, cfg.VectorRepulsionRate)
 	if s.ExplorationRate >= currentRate {
 		t.Errorf("Expected exploration rate to decrease after full listen, got %f", s.ExplorationRate)
 	}
