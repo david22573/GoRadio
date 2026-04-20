@@ -26,6 +26,7 @@ type Queue struct {
 	SessionID string         `json:"session_id"`
 	Current   *types.Track   `json:"current"`
 	Next      *types.Track   `json:"next"`
+	NextMode  string         `json:"next_mode"`
 	Upcoming  []*types.Track `json:"upcoming"`
 	PlayedIDs []uint         `json:"played_ids"`
 }
@@ -56,10 +57,10 @@ func (m *Manager) GetQueue(sessionID string) (*Queue, error) {
 	return q, nil
 }
 
-func (m *Manager) Advance(ctx context.Context, sessionID string) (*types.Track, error) {
+func (m *Manager) Advance(ctx context.Context, sessionID string) (*types.Track, string, error) {
 	q, err := m.GetQueue(sessionID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if q.Current != nil {
@@ -69,20 +70,37 @@ func (m *Manager) Advance(ctx context.Context, sessionID string) (*types.Track, 
 		}
 	}
 
+	mode := q.NextMode
 	q.Current = q.Next
 	if len(q.Upcoming) > 0 {
 		q.Next = q.Upcoming[0]
+		q.NextMode = "exploitation" // Simplified: upcoming are mostly exploitation
 		q.Upcoming = q.Upcoming[1:]
 	} else {
-		next, err := m.GenerateNext(ctx, sessionID)
+		next, nextMode, err := m.GenerateNext(ctx, sessionID)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		q.Next = next
+		q.NextMode = nextMode
+	}
+
+	// If we just started (q.Current was nil), we might need to Advance again
+	// or return the first generated track.
+	if q.Current == nil {
+		q.Current = q.Next
+		mode = q.NextMode
+		
+		// Fill Next again
+		next, nextMode, err := m.GenerateNext(ctx, sessionID)
+		if err == nil {
+			q.Next = next
+			q.NextMode = nextMode
+		}
 	}
 
 	// Async preload to fill upcoming
 	go m.Preload(ctx, sessionID)
 
-	return q.Current, nil
+	return q.Current, mode, nil
 }

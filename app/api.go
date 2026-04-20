@@ -10,8 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/david22573/GoRadio/app/config"
-	"github.com/david22573/GoRadio/app/db/sqlite"
+	"github.com/david22573/GoRadio/app/queue"
 	"github.com/david22573/GoRadio/app/session"
 	"github.com/david22573/GoRadio/app/types"
 	"github.com/gin-gonic/gin"
@@ -56,13 +55,19 @@ func (c *searchCache) set(key string, data []byte) {
 }
 
 type APIHandler struct {
-	app   *App
-	cache *searchCache
+	app        *App
+	cache      *searchCache
+	sessionMgr *session.Manager
+	queueMgr   *queue.Manager
 }
 
 func (a *APIHandler) RegisterAPI() {
 	// Initialize cache with a 15-minute TTL for search queries
 	a.cache = newSearchCache(15 * time.Minute)
+
+	// Wire managers from app
+	a.sessionMgr = a.app.SessionMgr
+	a.queueMgr = a.app.QueueMgr
 
 	api := a.app.Router.Group("/api")
 	{
@@ -255,11 +260,19 @@ func (a *APIHandler) CreateSession(c *gin.Context) {
 	var req struct {
 		SeedTrackID uint `json:"seed_track_id"`
 	}
-	if err := c.Bind(&req); err != nil {
+	if err := c.BindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	s, err := a.app.SessionMgr.CreateSession(c.Request.Context(), req.SeedTrackID)
+
+	// Validation: Verify track exists
+	_, err := a.app.DB.GetTrackByID(req.SeedTrackID)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "seed track not found"})
+		return
+	}
+
+	s, err := a.sessionMgr.Create(req.SeedTrackID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -269,7 +282,7 @@ func (a *APIHandler) CreateSession(c *gin.Context) {
 
 func (a *APIHandler) GetSession(c *gin.Context) {
 	id := c.Param("id")
-	s, err := a.app.SessionMgr.GetSession(id)
+	s, err := a.sessionMgr.GetSession(id)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "session not found"})
 		return
@@ -280,7 +293,7 @@ func (a *APIHandler) GetSession(c *gin.Context) {
 // Queue Handlers
 func (a *APIHandler) GetQueue(c *gin.Context) {
 	sessionID := c.Param("sessionId")
-	q, err := a.app.QueueMgr.GetQueue(sessionID)
+	q, err := a.queueMgr.GetQueue(sessionID)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "queue not found"})
 		return
@@ -290,17 +303,22 @@ func (a *APIHandler) GetQueue(c *gin.Context) {
 
 func (a *APIHandler) AdvanceQueue(c *gin.Context) {
 	sessionID := c.Param("sessionId")
-	track, err := a.app.QueueMgr.Advance(c.Request.Context(), sessionID)
+
+	nextTrack, mode, err := a.queueMgr.Advance(c.Request.Context(), sessionID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(200, track)
+
+	c.JSON(200, gin.H{
+		"track": nextTrack,
+		"mode":  mode, // "exploitation" or "exploration"
+	})
 }
 
 func (a *APIHandler) GetUpcoming(c *gin.Context) {
 	sessionID := c.Param("sessionId")
-	q, err := a.app.QueueMgr.GetQueue(sessionID)
+	q, err := a.queueMgr.GetQueue(sessionID)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "queue not found"})
 		return
@@ -311,37 +329,21 @@ func (a *APIHandler) GetUpcoming(c *gin.Context) {
 // Event Handlers
 func (a *APIHandler) RecordPlayEvent(c *gin.Context) {
 	var req struct {
-		SessionID  string    `json:"session_id"`
-		TrackID    uint      `json:"track_id"`
-		Completion float64   `json:"completion"`
-		StartedAt  time.Time `json:"started_at"`
+		SessionID  string  `json:"session_id"`
+		TrackID    uint    `json:"track_id"`
+		Completion float64 `json:"completion"`
 	}
-	if err := c.Bind(&req); err != nil {
+	if err := c.BindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	event := session.PlayEvent{
-		TrackID:     req.TrackID,
-		StartedAt:   req.StartedAt,
-		CompletedAt: time.Now(),
-		Completion:  req.Completion,
-	}
-	if err := a.app.SessionMgr.LogPlayEvent(req.SessionID, event); err != nil {
+
+	if err := a.sessionMgr.RecordPlay(req.SessionID, req.TrackID, req.Completion); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Trigger vector evolution
-	s, _ := a.app.SessionMgr.GetSession(req.SessionID)
-	if s != nil {
-		sqliteClient := a.app.DB.(*sqlite.Client)
-		vec, _ := sqliteClient.GetVectorByID(req.TrackID)
-		if vec != nil {
-			s.UpdateVector(event, vec, config.DefaultPlaybackConfig())
-		}
-	}
-
-	c.JSON(200, gin.H{"message": "Event recorded"})
+	c.JSON(200, gin.H{"status": "recorded"})
 }
 
 func (a *APIHandler) RecordSkipEvent(c *gin.Context) {
@@ -350,51 +352,37 @@ func (a *APIHandler) RecordSkipEvent(c *gin.Context) {
 		TrackID   uint   `json:"track_id"`
 		PlayedFor int    `json:"played_for"`
 	}
-	if err := c.Bind(&req); err != nil {
+	if err := c.BindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	event := session.SkipEvent{
-		TrackID:   req.TrackID,
-		SkippedAt: time.Now(),
-		PlayedFor: req.PlayedFor,
-	}
-	if err := a.app.SessionMgr.LogSkipEvent(req.SessionID, event); err != nil {
+
+	if err := a.sessionMgr.RecordSkip(req.SessionID, req.TrackID, req.PlayedFor); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Trigger vector evolution (skip = low completion)
-	s, _ := a.app.SessionMgr.GetSession(req.SessionID)
-	if s != nil {
-		sqliteClient := a.app.DB.(*sqlite.Client)
-		vec, _ := sqliteClient.GetVectorByID(req.TrackID)
-		if vec != nil {
-			s.UpdateVector(session.PlayEvent{Completion: 0.1}, vec, config.DefaultPlaybackConfig())
-		}
-	}
-
-	c.JSON(200, gin.H{"message": "Event recorded"})
+	c.JSON(200, gin.H{"status": "recorded"})
 }
 
 func (a *APIHandler) GetSessionMetrics(c *gin.Context) {
 	id := c.Param("id")
-	s, err := a.app.SessionMgr.GetSession(id)
+	metrics, err := a.sessionMgr.GetMetrics(id)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "session not found"})
 		return
 	}
-	c.JSON(200, s.CalculateMetrics())
+	c.JSON(200, metrics)
 }
 
 func (a *APIHandler) GetSessionJourney(c *gin.Context) {
 	id := c.Param("id")
-	s, err := a.app.SessionMgr.GetSession(id)
+	journey, err := a.sessionMgr.GetJourney(id)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "session not found"})
 		return
 	}
-	c.JSON(200, gin.H{"journey": s.GetJourney()})
+	c.JSON(200, gin.H{"journey": journey})
 }
 
 func getUintParam(c *gin.Context, param string) (uint, error) {

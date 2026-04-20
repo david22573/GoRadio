@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/david22573/GoRadio/app/config"
 	"github.com/david22573/GoRadio/app/db/sqlite"
 )
 
@@ -60,6 +61,72 @@ func (m *Manager) GetSession(id string) (*SessionState, error) {
 
 	session.LastActivityAt = time.Now()
 	return session, nil
+}
+
+func (m *Manager) Create(seedTrackID uint) (*SessionState, error) {
+	return m.CreateSession(context.Background(), seedTrackID)
+}
+
+func (m *Manager) RecordPlay(sessionID string, trackID uint, completion float64) error {
+	event := PlayEvent{
+		TrackID:     trackID,
+		StartedAt:   time.Now().Add(-time.Duration(completion*300) * time.Second), // Heuristic
+		CompletedAt: time.Now(),
+		Completion:  completion,
+	}
+
+	if err := m.LogPlayEvent(sessionID, event); err != nil {
+		return err
+	}
+
+	// Trigger vector evolution
+	s, _ := m.GetSession(sessionID)
+	if s != nil {
+		vec, _ := m.db.GetVectorByID(trackID)
+		if vec != nil {
+			s.UpdateVector(event, vec, config.DefaultPlaybackConfig())
+		}
+	}
+	return nil
+}
+
+func (m *Manager) RecordSkip(sessionID string, trackID uint, playedFor int) error {
+	event := SkipEvent{
+		TrackID:   trackID,
+		SkippedAt: time.Now(),
+		PlayedFor: playedFor,
+	}
+
+	if err := m.LogSkipEvent(sessionID, event); err != nil {
+		return err
+	}
+
+	// Trigger vector evolution (skip = low completion)
+	s, _ := m.GetSession(sessionID)
+	if s != nil {
+		vec, _ := m.db.GetVectorByID(trackID)
+		if vec != nil {
+			s.UpdateVector(PlayEvent{Completion: 0.1}, vec, config.DefaultPlaybackConfig())
+		}
+	}
+
+	return nil
+}
+
+func (m *Manager) GetMetrics(sessionID string) (SessionMetrics, error) {
+	s, err := m.GetSession(sessionID)
+	if err != nil {
+		return SessionMetrics{}, err
+	}
+	return s.CalculateMetrics(), nil
+}
+
+func (m *Manager) GetJourney(sessionID string) ([]JourneyPoint, error) {
+	s, err := m.GetSession(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return s.GetJourney(), nil
 }
 
 func (m *Manager) LogPlayEvent(sessionID string, event PlayEvent) error {

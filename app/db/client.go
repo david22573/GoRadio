@@ -18,6 +18,13 @@ type Client interface {
 	UpdateShow(show *types.Show) error
 	DeleteShow(id uint) error
 
+	// Tracks
+	GetTrackByID(id uint) (*types.Track, error)
+	GetTracksByStation(stationID uint) ([]types.Track, error)
+	CreateTrack(track types.Track) (uint, error)
+	CreateTracksBatch(tracks []types.Track) error
+	GetRandomTrack(excludeIDs []uint) (*types.Track, error)
+
 	// Close releases any open resources (like DB connections)
 	Close() error
 }

@@ -16,7 +16,7 @@ func (m *Manager) Preload(ctx context.Context, sessionID string) {
 
 	// Fill upcoming until we have the desired prefetch size
 	for len(q.Upcoming) < m.config.QueuePrefetchSize {
-		next, err := m.GenerateNext(ctx, sessionID)
+		next, _, err := m.GenerateNext(ctx, sessionID)
 		if err != nil {
 			break
 		}
