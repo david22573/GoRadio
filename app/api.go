@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -171,28 +172,31 @@ func (a *APIHandler) SearchTracks(c *gin.Context) {
 	// 2. Query Local DB
 	tracks, _ := a.app.DB.SearchTracks(query)
 
-	// 3. If local results are low, bridge to global Radio Browser
+	// 3. If local results are low, bridge to global YouTube (via yt-dlp)
 	if len(tracks) < 5 {
-		client := http.Client{Timeout: 5 * time.Second}
-		upstreamURL := fmt.Sprintf("https://de1.api.radio-browser.info/json/stations/search?name=%s&limit=15&hidebroken=true", url.QueryEscape(query))
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-		resp, err := client.Get(upstreamURL)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			var globalResults []struct {
-				Name string `json:"name"`
-				URL  string `json:"url_resolved"`
-				Tags string `json:"tags"`
-			}
-			if err := json.NewDecoder(resp.Body).Decode(&globalResults); err == nil {
-				for _, r := range globalResults {
+		// Search YouTube: ytsearch10:query
+		// Output format: title || id || duration || uploader
+		cmd := exec.CommandContext(ctx, "yt-dlp", 
+			"ytsearch10:"+query, 
+			"--print", "%(title)s || %(id)s || %(duration)s || %(uploader)s",
+			"--no-playlist")
+		
+		output, err := cmd.Output()
+		if err == nil {
+			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+			for _, line := range lines {
+				parts := strings.Split(line, " || ")
+				if len(parts) >= 4 {
 					tracks = append(tracks, types.Track{
-						Title:  strings.TrimSpace(r.Name),
-						Artist: strings.TrimSpace(r.Tags),
-						URL:    r.URL,
+						Title:  strings.TrimSpace(parts[0]),
+						Artist: strings.TrimSpace(parts[3]),
+						URL:    "https://www.youtube.com/watch?v=" + strings.TrimSpace(parts[1]),
 					})
 				}
 			}
-			resp.Body.Close()
 		}
 	}
 
