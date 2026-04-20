@@ -8,7 +8,7 @@
 	async function fetchJourney() {
 		const id = sessionManager.getSessionId();
 		if (!id) return;
-		
+
 		const res = await fetch(`/api/sessions/${id}/journey`);
 		if (res.ok) {
 			const data = await res.json();
@@ -47,7 +47,7 @@
 			if (i === 0) ctx.fillStyle = '#f59e0b'; // Start
 			ctx.arc(x, y, i === points.length - 1 ? 6 : 4, 0, Math.PI * 2);
 			ctx.fill();
-			
+
 			// Glow for current point
 			if (i === points.length - 1) {
 				ctx.shadowBlur = 10;
@@ -66,8 +66,15 @@
 </script>
 
 <div class="p-4 bg-zinc-900/50 rounded-xl border border-zinc-800 backdrop-blur-sm mt-4">
-	<h3 class="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-4">Acoustic Journey</h3>
-	<canvas bind:this={canvas} width="300" height="200" class="w-full h-auto rounded-lg bg-zinc-950/50"></canvas>
+	<h3 class="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-4">
+		Acoustic Journey
+	</h3>
+	<canvas
+		bind:this={canvas}
+		width="300"
+		height="200"
+		class="w-full h-auto rounded-lg bg-zinc-950/50"
+	></canvas>
 	<div class="flex gap-4 mt-3">
 		<div class="flex items-center gap-1.5 text-[10px] text-zinc-500">
 			<span class="w-2 h-2 rounded-full bg-amber-500"></span> Start

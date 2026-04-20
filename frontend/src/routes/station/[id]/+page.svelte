@@ -4,8 +4,13 @@
 
 	let { data } = $props();
 
-	let stationName = $state(data.station?.name || '');
-	let stationUrl = $state(data.station?.url || '');
+	let stationName = $state('');
+	let stationUrl = $state('');
+
+	$effect(() => {
+		stationName = data.station?.name || '';
+		stationUrl = data.station?.url || '';
+	});
 
 	async function updateStation(e: Event) {
 		e.preventDefault();
@@ -154,10 +159,12 @@
 				<form onsubmit={updateStation} class="space-y-6">
 					<div>
 						<label
+							for="station-name"
 							class="block text-xs font-label uppercase tracking-widest text-on-surface-variant mb-2"
 							>Station Name</label
 						>
 						<input
+							id="station-name"
 							bind:value={stationName}
 							class="w-full bg-surface-container-highest border-none rounded-lg p-3 text-sm focus:ring-1 focus:ring-primary text-on-surface"
 							type="text"
@@ -165,10 +172,12 @@
 					</div>
 					<div>
 						<label
+							for="broadcast-url"
 							class="block text-xs font-label uppercase tracking-widest text-on-surface-variant mb-2"
 							>Broadcast URL</label
 						>
 						<input
+							id="broadcast-url"
 							bind:value={stationUrl}
 							class="w-full bg-surface-container-highest border-none rounded-lg p-3 text-sm focus:ring-1 focus:ring-primary text-on-surface"
 							type="url"

@@ -85,10 +85,10 @@ class AudioPlayer {
 
 	async skip() {
 		if (!this.audio || !this.currentTrack) return;
-		
+
 		const completion = this.audio.currentTime / this.audio.duration;
 		await this.recordEvent('skip', completion);
-		
+
 		await queueManager.advance();
 		if (queueManager.currentTrack) {
 			this.playTrack(queueManager.currentTrack);
@@ -139,7 +139,9 @@ class AudioPlayer {
 			}
 		} else {
 			this.isLoading = true;
-			const src = this.currentStation ? (this.currentStation.url_resolved || this.currentStation.url) : this.currentTrack.url;
+			const src = this.currentStation
+				? this.currentStation.url_resolved || this.currentStation.url
+				: this.currentTrack.url;
 			this.audio.src = src;
 			this.audio.load();
 			this.audio.play().catch(console.error);

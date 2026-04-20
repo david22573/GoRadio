@@ -10,7 +10,11 @@
 <div
 	class="group relative rounded-2xl bg-surface-container-low border border-outline-variant/10 p-6 hover:bg-surface-container transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.4)]"
 >
-	<a href={`/station/${station.id}`} class="absolute inset-0 z-10 rounded-2xl"></a>
+	<a
+		href={`/station/${station.id}`}
+		class="absolute inset-0 z-10 rounded-2xl"
+		aria-label={`View station details for ${station.name}`}
+	></a>
 
 	<div class="flex items-start justify-between mb-6 relative z-20">
 		<button

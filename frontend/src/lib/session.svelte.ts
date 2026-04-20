@@ -22,7 +22,7 @@ class SessionManager {
 				body: JSON.stringify({ seed_track_id: seedTrackId })
 			});
 			if (!res.ok) throw new Error('Failed to create session');
-			
+
 			const data = await res.json();
 			this.session = data;
 			this.isActive = true;
