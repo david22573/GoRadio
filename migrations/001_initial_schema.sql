@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS tracks (
     station_id  INTEGER NOT NULL,
     title       TEXT NOT NULL,
     artist      TEXT NOT NULL,
+    url         TEXT NOT NULL,
     duration    INTEGER NOT NULL,
     analyzed_at DATETIME,
     FOREIGN KEY(station_id) REFERENCES stations(id) ON DELETE CASCADE

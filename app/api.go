@@ -73,6 +73,7 @@ func (a *APIHandler) RegisterAPI() {
 	{
 		api.GET("/ping", func(c *gin.Context) { c.JSON(200, gin.H{"message": "pong"}) })
 		api.GET("/search", a.SearchStations)
+		api.GET("/tracks/search", a.SearchTracks)
 
 		api.GET("/stations", a.GetStations)
 		api.POST("/stations", a.CreateStation)
@@ -145,6 +146,21 @@ func (a *APIHandler) SearchStations(c *gin.Context) {
 	// 4. Save to cache and return
 	a.cache.set(query, body)
 	c.Data(200, "application/json", body)
+}
+
+func (a *APIHandler) SearchTracks(c *gin.Context) {
+	query := c.Query("q")
+	if query == "" {
+		c.JSON(400, gin.H{"error": "search query 'q' is required"})
+		return
+	}
+
+	tracks, err := a.app.DB.SearchTracks(query)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"tracks": tracks})
 }
 
 func (a *APIHandler) GetStations(c *gin.Context) {

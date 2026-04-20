@@ -2,13 +2,19 @@
 	import { invalidateAll } from '$app/navigation';
 	import StationCard from '$lib/components/StationCard.svelte';
 	import DiscoverCard from '$lib/components/DiscoverCard.svelte';
+	import TrackCard from '$lib/components/TrackCard.svelte';
 
 	let { data } = $props();
 
-	// Search State
+	// Station Search State
 	let searchQuery = $state('');
 	let searchResults = $state<any[]>([]);
 	let isSearching = $state(false);
+
+	// Track Search State
+	let trackSearchQuery = $state('');
+	let trackResults = $state<any[]>([]);
+	let isSearchingTracks = $state(false);
 
 	// Custom Add State
 	let customName = $state('');
@@ -29,6 +35,24 @@
 			alert('Failed to fetch stations');
 		} finally {
 			isSearching = false;
+		}
+	}
+
+	async function searchTracks(e: Event) {
+		e.preventDefault();
+		if (!trackSearchQuery) return;
+
+		isSearchingTracks = true;
+		try {
+			const res = await fetch(`/api/tracks/search?q=${encodeURIComponent(trackSearchQuery)}`);
+			if (!res.ok) throw new Error('Track search failed');
+			const data = await res.json();
+			trackResults = data.tracks || [];
+		} catch (err) {
+			console.error(err);
+			alert('Failed to fetch tracks');
+		} finally {
+			isSearchingTracks = false;
 		}
 	}
 
@@ -171,9 +195,62 @@
 			{#if searchResults.length > 0}
 				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
 					{#each searchResults as result (result.stationuuid)}
-						<DiscoverCard {result} {onAdd} />
+						<DiscoverCard {result} onAdd={addFromSearch} />
 					{/each}
 				</div>
+			{/if}
+		</div>
+	</section>
+
+	<section
+		class="p-8 rounded-3xl bg-surface-container-low border border-outline-variant/10 shadow-2xl shadow-black/50 relative overflow-hidden"
+	>
+		<div
+			class="absolute -top-32 -left-32 w-96 h-96 bg-secondary/5 rounded-full blur-[100px] pointer-events-none"
+		></div>
+
+		<div class="relative z-10">
+			<h2
+				class="font-headline text-3xl font-extrabold tracking-tighter mb-6 text-white flex items-center gap-3"
+			>
+				<span class="material-symbols-outlined text-secondary">music_note</span>
+				Sonic Library
+			</h2>
+
+			<form onsubmit={searchTracks} class="flex flex-col md:flex-row gap-4 mb-8">
+				<div class="relative flex-1">
+					<span
+						class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant"
+						>search</span
+					>
+					<input
+						type="text"
+						bind:value={trackSearchQuery}
+						placeholder="Search songs by title or artist..."
+						class="w-full bg-surface-container-highest border border-outline-variant/20 rounded-xl py-4 pl-12 pr-4 text-sm focus:ring-2 focus:ring-secondary text-white focus:outline-none transition-all"
+						required
+					/>
+				</div>
+				<button
+					type="submit"
+					disabled={isSearchingTracks}
+					class="bg-white hover:bg-gray-200 text-black font-headline font-bold py-4 px-8 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+				>
+					{isSearchingTracks ? 'Searching...' : 'Search Songs'}
+					{#if !isSearchingTracks}
+						<span class="material-symbols-outlined text-sm">library_music</span>
+					{/if}
+				</button>
+			</form>
+
+			{#if trackResults.length > 0}
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+					{#each trackResults as track (track.id)}
+						<TrackCard {track} />
+					{/each}
+				</div>
+			{:else if trackSearchQuery && !isSearchingTracks}
+				<p class="text-on-surface-variant text-center py-8">No matching songs found in your archive.</p>
 			{/if}
 		</div>
 	</section>

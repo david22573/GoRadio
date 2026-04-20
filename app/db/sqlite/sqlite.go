@@ -107,16 +107,16 @@ func (c *Client) DeleteShow(id uint) error {
 }
 
 func (c *Client) GetTracksByStation(stationID uint) ([]types.Track, error) {
-	return queryMultiple(c.db, scanTrack, "SELECT id, station_id, title, artist, duration, analyzed_at FROM tracks WHERE station_id = ?", stationID)
+	return queryMultiple(c.db, scanTrack, "SELECT id, station_id, title, artist, url, duration, analyzed_at FROM tracks WHERE station_id = ?", stationID)
 }
 
 func (c *Client) GetTrackByID(id uint) (*types.Track, error) {
-	return querySingle(c.db, scanTrack, "SELECT id, station_id, title, artist, duration, analyzed_at FROM tracks WHERE id = ?", id)
+	return querySingle(c.db, scanTrack, "SELECT id, station_id, title, artist, url, duration, analyzed_at FROM tracks WHERE id = ?", id)
 }
 
 func (c *Client) CreateTrack(track types.Track) (uint, error) {
-	id, err := execInsert(c.db, "INSERT INTO tracks (station_id, title, artist, duration, analyzed_at) VALUES (?, ?, ?, ?, ?)",
-		track.StationID, track.Title, track.Artist, track.Duration, track.AnalyzedAt)
+	id, err := execInsert(c.db, "INSERT INTO tracks (station_id, title, artist, url, duration, analyzed_at) VALUES (?, ?, ?, ?, ?, ?)",
+		track.StationID, track.Title, track.Artist, track.URL, track.Duration, track.AnalyzedAt)
 	return uint(id), err
 }
 
@@ -127,14 +127,14 @@ func (c *Client) CreateTracksBatch(tracks []types.Track) error {
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Prepare("INSERT INTO tracks (station_id, title, artist, duration, analyzed_at) VALUES (?, ?, ?, ?, ?)")
+	stmt, err := tx.Prepare("INSERT INTO tracks (station_id, title, artist, url, duration, analyzed_at) VALUES (?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
 	for _, t := range tracks {
-		if _, err := stmt.Exec(t.StationID, t.Title, t.Artist, t.Duration, t.AnalyzedAt); err != nil {
+		if _, err := stmt.Exec(t.StationID, t.Title, t.Artist, t.URL, t.Duration, t.AnalyzedAt); err != nil {
 			return err
 		}
 	}
@@ -142,7 +142,7 @@ func (c *Client) CreateTracksBatch(tracks []types.Track) error {
 }
 
 func (c *Client) GetRandomTrack(excludeIDs []uint) (*types.Track, error) {
-	query := "SELECT id, station_id, title, artist, duration, analyzed_at FROM tracks"
+	query := "SELECT id, station_id, title, artist, url, duration, analyzed_at FROM tracks"
 	var args []interface{}
 
 	if len(excludeIDs) > 0 {
@@ -159,4 +159,10 @@ func (c *Client) GetRandomTrack(excludeIDs []uint) (*types.Track, error) {
 
 	query += " ORDER BY RANDOM() LIMIT 1"
 	return querySingle(c.db, scanTrack, query, args...)
+}
+
+func (c *Client) SearchTracks(query string) ([]types.Track, error) {
+	q := "%" + query + "%"
+	sql := "SELECT id, station_id, title, artist, url, duration, analyzed_at FROM tracks WHERE title LIKE ? OR artist LIKE ? LIMIT 20"
+	return queryMultiple(c.db, scanTrack, sql, q, q)
 }

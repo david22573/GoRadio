@@ -24,6 +24,7 @@ type Client interface {
 	CreateTrack(track types.Track) (uint, error)
 	CreateTracksBatch(tracks []types.Track) error
 	GetRandomTrack(excludeIDs []uint) (*types.Track, error)
+	SearchTracks(query string) ([]types.Track, error)
 
 	// Vectors
 	InsertTrackVector(trackID uint, embedding []float64) error

@@ -15,6 +15,7 @@ type Track struct {
 	StationID  uint      `json:"station_id"`
 	Title      string    `json:"title"`
 	Artist     string    `json:"artist"`
+	URL        string    `json:"url"`
 	Duration   int       `json:"duration"` // seconds
 	AnalyzedAt time.Time `json:"analyzed_at"`
 }

@@ -30,6 +30,7 @@ func setupTestDB(t *testing.T) *Client {
 			station_id  INTEGER NOT NULL,
 			title       TEXT NOT NULL,
 			artist      TEXT NOT NULL,
+			url         TEXT NOT NULL,
 			duration    INTEGER NOT NULL,
 			analyzed_at DATETIME
 		)`,

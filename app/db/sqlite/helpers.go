@@ -126,6 +126,7 @@ func scanTrack(rows *sql.Rows) (types.Track, error) {
 		&t.StationID,
 		&t.Title,
 		&t.Artist,
+		&t.URL,
 		&t.Duration,
 		&t.AnalyzedAt,
 	)
