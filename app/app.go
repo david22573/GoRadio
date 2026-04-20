@@ -11,6 +11,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/david22573/GoRadio/app/audio"
 	"github.com/david22573/GoRadio/app/config"
 	"github.com/david22573/GoRadio/app/db"
 	"github.com/david22573/GoRadio/app/db/sqlite"
@@ -33,39 +34,65 @@ type App struct {
 
 	Features config.FeatureFlags
 
-	SessionMgr *session.Manager
-	QueueMgr   *queue.Manager
+	SessionMgr    *session.Manager
+	QueueMgr      *queue.Manager
+	SimilarityEng *similarity.Engine
+	AudioAnalyzer *audio.Analyzer
+	Config        config.PlaybackConfig
 
 	schedulers []gocron.Scheduler
 	mu         sync.Mutex
 	httpSrv    *http.Server
 }
 
+func (a *App) InitializeDependencies() error {
+	// 1. Load configuration
+	a.Config = config.DefaultPlaybackConfig()
+
+	// 2. Initialize database client (already exists in a.DB)
+	sqliteClient, ok := a.DB.(*sqlite.Client)
+	if !ok {
+		return fmt.Errorf("database must be a sqlite.Client")
+	}
+
+	// 3. Initialize audio analyzer
+	a.AudioAnalyzer = audio.NewAnalyzer()
+
+	// 4. Initialize similarity engine
+	a.SimilarityEng = similarity.NewEngine(sqliteClient)
+
+	// 5. Initialize session manager
+	a.SessionMgr = session.NewManager(sqliteClient)
+
+	// 6. Initialize queue manager (depends on session + similarity)
+	a.QueueMgr = queue.NewManager(
+		a.SessionMgr,
+		a.SimilarityEng,
+		sqliteClient,
+	)
+
+	return nil
+}
+
 func NewApp(database db.Client) (*App, error) {
 	r := gin.Default()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Cast to sqlite.Client to use vector features
-	sqliteClient, ok := database.(*sqlite.Client)
-	if !ok {
-		return nil, fmt.Errorf("database must be a sqlite.Client")
-	}
-
-	sessionMgr := session.NewManager(sqliteClient)
-	similarityEng := similarity.NewEngine(sqliteClient)
-	queueMgr := queue.NewManager(sessionMgr, similarityEng, sqliteClient)
-
-	return &App{
-		Router:     r,
-		DB:         database,
-		Ctx:        ctx,
-		cancel:     cancel,
-		Features:   config.LoadFeatureFlags(),
-		SessionMgr: sessionMgr,
-		QueueMgr:   queueMgr,
+	app := &App{
+		Router:   r,
+		DB:       database,
+		Ctx:      ctx,
+		cancel:   cancel,
+		Features: config.LoadFeatureFlags(),
 
 		schedulers: []gocron.Scheduler{},
-	}, nil
+	}
+
+	if err := app.InitializeDependencies(); err != nil {
+		return nil, fmt.Errorf("failed to initialize dependencies: %w", err)
+	}
+
+	return app, nil
 }
 
 func (a *App) AddScheduler(sch gocron.Scheduler) {
