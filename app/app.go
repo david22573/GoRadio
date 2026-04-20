@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -49,7 +50,15 @@ func (a *App) InitializeDependencies() error {
 	// 1. Load configuration
 	a.Config = config.DefaultPlaybackConfig()
 
-	// 2. Initialize database client (already exists in a.DB)
+	// 2. Check system dependencies
+	if _, err := exec.LookPath("yt-dlp"); err != nil {
+		log.Println("Warning: yt-dlp not found. YouTube streaming will be disabled.")
+	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		log.Println("Warning: ffmpeg not found. Audio analysis will be disabled.")
+	}
+
+	// 3. Initialize database client (already exists in a.DB)
 	sqliteClient, ok := a.DB.(*sqlite.Client)
 	if !ok {
 		return fmt.Errorf("database must be a sqlite.Client")

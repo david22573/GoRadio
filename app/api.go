@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,6 +76,7 @@ func (a *APIHandler) RegisterAPI() {
 		api.GET("/ping", func(c *gin.Context) { c.JSON(200, gin.H{"message": "pong"}) })
 		api.GET("/search", a.SearchStations)
 		api.GET("/tracks/search", a.SearchTracks)
+		api.GET("/tracks/resolve", a.ResolveTrack)
 
 		api.GET("/stations", a.GetStations)
 		api.POST("/stations", a.CreateStation)
@@ -201,6 +204,37 @@ func (a *APIHandler) SearchTracks(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{"tracks": tracks})
+}
+
+func (a *APIHandler) ResolveTrack(c *gin.Context) {
+	trackURL := c.Query("url")
+	if trackURL == "" {
+		c.JSON(400, gin.H{"error": "url parameter is required"})
+		return
+	}
+
+	// 1. Check if it needs resolution (YouTube etc)
+	needsResolve := strings.Contains(trackURL, "youtube.com") ||
+		strings.Contains(trackURL, "youtu.be") ||
+		strings.Contains(trackURL, "soundcloud.com")
+
+	if !needsResolve {
+		c.JSON(200, gin.H{"url": trackURL})
+		return
+	}
+
+	// 2. Use yt-dlp to get the direct audio stream URL
+	// -g: get URL
+	// -f: bestaudio
+	cmd := exec.Command("yt-dlp", "-g", "-f", "bestaudio", trackURL)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to resolve stream URL", "details": string(output)})
+		return
+	}
+
+	resolvedURL := strings.TrimSpace(string(output))
+	c.JSON(200, gin.H{"url": resolvedURL})
 }
 
 func (a *APIHandler) GetStations(c *gin.Context) {

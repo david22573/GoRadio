@@ -67,20 +67,27 @@ class AudioPlayer {
 		});
 	}
 
-	playTrack(track: any) {
+	async playTrack(track: any) {
 		this.init();
 		if (!this.audio) return;
 		this.currentStation = null;
 		this.currentTrack = track;
 		this.isLoading = true;
 
-		this.audio.src = track.url;
-		this.audio.load();
-		this.audio.play().catch((err) => {
+		try {
+			// Resolve URL if needed (YouTube etc)
+			const res = await fetch(`/api/tracks/resolve?url=${encodeURIComponent(track.url)}`);
+			const data = await res.json();
+			const resolvedUrl = data.url || track.url;
+
+			this.audio.src = resolvedUrl;
+			this.audio.load();
+			await this.audio.play();
+		} catch (err) {
 			console.error('Track playback failed:', err);
 			this.isLoading = false;
 			this.isPlaying = false;
-		});
+		}
 	}
 
 	async skip() {
@@ -116,8 +123,7 @@ class AudioPlayer {
 		};
 
 		if (type === 'play') {
-			body.started_at = new time.Time(); // JS needs to format this correctly for Go
-			// Simplified for now
+			body.started_at = new Date().toISOString();
 		}
 
 		await fetch(`/api/events/${type}`, {
