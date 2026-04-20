@@ -155,11 +155,51 @@ func (a *APIHandler) SearchTracks(c *gin.Context) {
 		return
 	}
 
-	tracks, err := a.app.DB.SearchTracks(query)
-	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
+	// 1. Check local Go cache for global results
+	cacheKey := "tracks:" + query
+	if cachedData, found := a.cache.get(cacheKey); found {
+		var cachedTracks []types.Track
+		if err := json.Unmarshal(cachedData, &cachedTracks); err == nil {
+			c.JSON(200, gin.H{"tracks": cachedTracks})
+			return
+		}
 	}
+
+	// 2. Query Local DB
+	tracks, _ := a.app.DB.SearchTracks(query)
+
+	// 3. If local results are low, bridge to global Radio Browser
+	if len(tracks) < 5 {
+		client := http.Client{Timeout: 5 * time.Second}
+		upstreamURL := fmt.Sprintf("https://de1.api.radio-browser.info/json/stations/search?name=%s&limit=15&hidebroken=true", url.QueryEscape(query))
+
+		resp, err := client.Get(upstreamURL)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			var globalResults []struct {
+				Name string `json:"name"`
+				URL  string `json:"url_resolved"`
+				Tags string `json:"tags"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&globalResults); err == nil {
+				for _, r := range globalResults {
+					tracks = append(tracks, types.Track{
+						Title:  r.Name,
+						Artist: r.Tags,
+						URL:    r.URL,
+					})
+				}
+			}
+			resp.Body.Close()
+		}
+	}
+
+	// 4. Update cache if we found anything
+	if len(tracks) > 0 {
+		if data, err := json.Marshal(tracks); err == nil {
+			a.cache.set(cacheKey, data)
+		}
+	}
+
 	c.JSON(200, gin.H{"tracks": tracks})
 }
 
