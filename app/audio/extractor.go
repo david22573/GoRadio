@@ -50,7 +50,74 @@ func (e *Extractor) ExtractFromWav(r io.ReadSeeker) (*AcousticFeatures, error) {
 }
 
 func (e *Extractor) calculateTempo(data []float64, sampleRate float64) float64 {
-	return 120.0 // Placeholder
+	if len(data) == 0 {
+		return 120.0
+	}
+
+	windowSize := int(sampleRate * 0.05) // 50ms window
+	stepSize := int(sampleRate * 0.025)  // 25ms step
+	if windowSize == 0 || stepSize == 0 {
+		return 120.0
+	}
+
+	var energies []float64
+	for i := 0; i+windowSize <= len(data); i += stepSize {
+		var energy float64
+		for j := 0; j < windowSize; j++ {
+			energy += data[i+j] * data[i+j]
+		}
+		energies = append(energies, energy)
+	}
+
+	if len(energies) == 0 {
+		return 120.0
+	}
+
+	var sumEnergy float64
+	for _, e := range energies {
+		sumEnergy += e
+	}
+	meanEnergy := sumEnergy / float64(len(energies))
+
+	var sumSq float64
+	for _, e := range energies {
+		sumSq += (e - meanEnergy) * (e - meanEnergy)
+	}
+	stdEnergy := math.Sqrt(sumSq / float64(len(energies)))
+	threshold := meanEnergy + 1.5*stdEnergy
+
+	var peakIndices []int
+	for i := 1; i < len(energies)-1; i++ {
+		if energies[i] > threshold && energies[i] > energies[i-1] && energies[i] > energies[i+1] {
+			peakIndices = append(peakIndices, i)
+		}
+	}
+
+	if len(peakIndices) < 2 {
+		return 120.0
+	}
+
+	var sumDiff float64
+	for i := 1; i < len(peakIndices); i++ {
+		sumDiff += float64(peakIndices[i] - peakIndices[i-1])
+	}
+	avgDiffFrames := sumDiff / float64(len(peakIndices)-1)
+
+	timePerFrame := float64(stepSize) / sampleRate
+	avgDiffSecs := avgDiffFrames * timePerFrame
+
+	if avgDiffSecs > 0 {
+		bpm := 60.0 / avgDiffSecs
+		for bpm < 60 && bpm > 0 {
+			bpm *= 2
+		}
+		for bpm > 240 {
+			bpm /= 2
+		}
+		return bpm
+	}
+
+	return 120.0
 }
 
 func (e *Extractor) calculateSpectralCentroid(data []float64, sampleRate float64) float64 {
@@ -98,42 +165,71 @@ func (e *Extractor) calculateEnergy(data []float64) float64 {
 
 // calculateMFCC returns 13 Mel-frequency cepstral coefficients.
 func (e *Extractor) calculateMFCC(data []float64, sampleRate float64) []float64 {
-	// 1. Frame the signal into short frames
-	// 2. Compute the periodogram estimate of the power spectrum
-	// 3. Apply the mel filterbank to the power spectra, sum the energy in each filter
-	// 4. Take the logarithm of all filterbank energies
-	// 5. Take the DCT of the log filterbank energies.
-	// 6. Keep DCT coefficients 1-13.
-	
-	// Simplified implementation for placeholder
 	mfccs := make([]float64, 13)
 	if len(data) == 0 {
 		return mfccs
 	}
 	
-	// For demonstration, we use some energy levels from FFT
 	coeffs := fft.FFTReal(data)
 	numBins := len(coeffs) / 2
 	
-	// Group FFT bins into 13 "mel" bands (logarithmically spaced)
-	bandWidth := math.Log10(sampleRate/2) / 13
-	for i := 0; i < 13; i++ {
-		minFreq := math.Pow(10, float64(i)*bandWidth)
-		maxFreq := math.Pow(10, float64(i+1)*bandWidth)
-		
+	powerSpec := make([]float64, numBins)
+	for i := 0; i < numBins; i++ {
+		mag := math.Hypot(real(coeffs[i]), imag(coeffs[i]))
+		powerSpec[i] = (mag * mag) / float64(len(data))
+	}
+	
+	numFilters := 13
+	minMel := 2595.0 * math.Log10(1.0)
+	maxMel := 2595.0 * math.Log10(1.0+(sampleRate/2.0)/700.0)
+	
+	melPoints := make([]float64, numFilters+2)
+	stepMel := (maxMel - minMel) / float64(numFilters+1)
+	for i := 0; i < numFilters+2; i++ {
+		melPoints[i] = minMel + float64(i)*stepMel
+	}
+	
+	binPoints := make([]int, numFilters+2)
+	for i := 0; i < numFilters+2; i++ {
+		hz := 700.0 * (math.Pow(10, melPoints[i]/2595.0) - 1.0)
+		bin := int(math.Floor(float64(len(data)) * hz / sampleRate))
+		if bin >= numBins {
+			bin = numBins - 1
+		}
+		if bin < 0 {
+			bin = 0
+		}
+		binPoints[i] = bin
+	}
+	
+	filterBankEnergies := make([]float64, numFilters)
+	for i := 0; i < numFilters; i++ {
 		var energy float64
-		count := 0
-		for j := 0; j < numBins; j++ {
-			freq := float64(j) * sampleRate / float64(len(data))
-			if freq >= minFreq && freq <= maxFreq {
-				mag := math.Hypot(real(coeffs[j]), imag(coeffs[j]))
-				energy += mag * mag
-				count++
+		for j := binPoints[i]; j < binPoints[i+1]; j++ {
+			if binPoints[i+1]-binPoints[i] > 0 {
+				weight := float64(j-binPoints[i]) / float64(binPoints[i+1]-binPoints[i])
+				energy += weight * powerSpec[j]
 			}
 		}
-		if count > 0 {
-			mfccs[i] = math.Log10(energy/float64(count) + 1e-10)
+		for j := binPoints[i+1]; j < binPoints[i+2]; j++ {
+			if binPoints[i+2]-binPoints[i+1] > 0 {
+				weight := float64(binPoints[i+2]-j) / float64(binPoints[i+2]-binPoints[i+1])
+				energy += weight * powerSpec[j]
+			}
 		}
+		if energy > 0 {
+			filterBankEnergies[i] = math.Log(energy)
+		} else {
+			filterBankEnergies[i] = math.Log(1e-10)
+		}
+	}
+	
+	for i := 0; i < 13; i++ {
+		var sum float64
+		for j := 0; j < numFilters; j++ {
+			sum += filterBankEnergies[j] * math.Cos(math.Pi*float64(i)*(float64(j)+0.5)/float64(numFilters))
+		}
+		mfccs[i] = sum
 	}
 	
 	return mfccs
@@ -193,6 +289,18 @@ func (e *Extractor) generateEmbedding(f *AcousticFeatures) []float64 {
 		idx++
 	}
 	
-	// Remainder stays 0 (padding) or could be filled with more complex analysis
+	// Normalize the final vector (L2 norm = 1)
+	var sumSq float64
+	for _, val := range embedding {
+		sumSq += val * val
+	}
+	
+	magnitude := math.Sqrt(sumSq)
+	if magnitude > 0 {
+		for i := range embedding {
+			embedding[i] /= magnitude
+		}
+	}
+	
 	return embedding
 }

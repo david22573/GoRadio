@@ -54,7 +54,12 @@ func (rc *RadioClient) Record(ctx context.Context, show *types.Show) error {
 	log.Printf("▶️  Recording %s for %v → %s\n", show.Name, show.Duration, outPath)
 
 	// CommandContext ties the ffmpeg process to the application lifecycle
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	// Add a hard timeout to exec.CommandContext derived from show.Duration plus a 5-minute buffer.
+	timeout := show.Duration.Duration + 5*time.Minute
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(timeoutCtx, "ffmpeg", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

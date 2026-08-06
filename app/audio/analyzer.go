@@ -17,13 +17,24 @@ func NewAnalyzer() *Analyzer {
 	}
 }
 
-// AnalyzeStream samples a 30-second snippet from an audio source
 func (a *Analyzer) AnalyzeStream(ctx context.Context, source io.Reader) (*AcousticFeatures, error) {
-	// For now, assume we get a stream that we can sample
-	// In a real implementation, we would use a library to decode different formats (mp3, etc)
-	// and take a 30s snippet.
-	// For this task, we'll focus on the WAV extraction part.
-	return nil, nil
+	tmpFile, err := os.CreateTemp("", "stream-*.wav")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	_, err = io.Copy(tmpFile, io.LimitReader(source, 2646000))
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	return a.extractor.ExtractFromWav(tmpFile)
 }
 
 // AnalyzeFile extracts features from a local audio file

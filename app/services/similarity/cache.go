@@ -19,9 +19,25 @@ type VectorCache struct {
 }
 
 func NewVectorCache(ttl time.Duration) *VectorCache {
-	return &VectorCache{
+	vc := &VectorCache{
 		data: make(map[string]CacheEntry),
 		ttl:  ttl,
+	}
+	go vc.cleanupLoop()
+	return vc
+}
+
+func (vc *VectorCache) cleanupLoop() {
+	ticker := time.NewTicker(15 * time.Minute)
+	for range ticker.C {
+		vc.mu.Lock()
+		now := time.Now()
+		for k, v := range vc.data {
+			if now.After(v.ExpiresAt) {
+				delete(vc.data, k)
+			}
+		}
+		vc.mu.Unlock()
 	}
 }
 

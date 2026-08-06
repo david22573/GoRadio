@@ -16,12 +16,12 @@ func (m *Manager) Preload(ctx context.Context, sessionID string) {
 
 	// Fill upcoming until we have the desired prefetch size
 	for len(q.Upcoming) < m.config.QueuePrefetchSize {
-		next, _, err := m.GenerateNext(ctx, sessionID)
+		next, _, err := m.generateNextWithQueue(ctx, sessionID, q)
 		if err != nil {
 			break
 		}
 		
-		// Avoid duplicates within upcoming
+		// Avoid duplicates within upcoming (already handled by generateNextWithQueue, but double check)
 		isDup := false
 		for _, u := range q.Upcoming {
 			if u.ID == next.ID {
@@ -32,7 +32,7 @@ func (m *Manager) Preload(ctx context.Context, sessionID string) {
 		if !isDup {
 			q.Upcoming = append(q.Upcoming, next)
 		} else {
-			// If we hit a duplicate, stop to avoid infinite loop
+			// This shouldn't happen with updated GenerateNext, but safely break
 			break
 		}
 	}

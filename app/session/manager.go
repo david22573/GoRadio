@@ -200,13 +200,20 @@ func (m *Manager) LogSkipEvent(sessionID string, event SkipEvent) error {
 
 func (m *Manager) cleanupLoop() {
 	ticker := time.NewTicker(10 * time.Minute)
-	for range ticker.C {
-		m.mu.Lock()
-		for id, s := range m.sessions {
-			if time.Since(s.LastActivityAt) > m.ttl {
-				delete(m.sessions, id)
+	dbTicker := time.NewTicker(24 * time.Hour)
+	for {
+		select {
+		case <-ticker.C:
+			m.mu.Lock()
+			for id, s := range m.sessions {
+				if time.Since(s.LastActivityAt) > m.ttl {
+					delete(m.sessions, id)
+				}
 			}
+			m.mu.Unlock()
+		case <-dbTicker.C:
+			// Prune old sessions from DB (30 days)
+			m.db.CleanupOldSessions(30 * 24 * time.Hour)
 		}
-		m.mu.Unlock()
 	}
 }

@@ -41,10 +41,10 @@
 </script>
 
 <main class="h-full">
-	<section class="relative px-8 pt-12 pb-16 hero-gradient overflow-hidden">
-		<div class="flex flex-col md:flex-row gap-10 items-end relative z-10">
+	<section class="relative px-4 md:px-8 pt-8 md:pt-12 pb-12 md:pb-16 hero-gradient overflow-hidden">
+		<div class="flex flex-col md:flex-row gap-6 md:gap-10 items-center md:items-end relative z-10 text-center md:text-left">
 			<div
-				class="w-64 h-64 shrink-0 rounded-xl overflow-hidden shadow-[0_20px_40px_rgba(0,0,0,0.6)] relative group bg-surface-container-highest"
+				class="w-48 h-48 md:w-64 md:h-64 shrink-0 rounded-xl overflow-hidden shadow-[0_20px_40px_rgba(0,0,0,0.6)] relative group bg-surface-container-highest"
 			>
 				<img
 					alt="Station Art"
@@ -58,7 +58,7 @@
 				</div>
 			</div>
 			<div class="flex-1">
-				<div class="flex items-center gap-3 mb-2">
+				<div class="flex flex-wrap justify-center md:justify-start items-center gap-3 mb-2">
 					<span
 						class="px-3 py-1 rounded-full bg-primary/20 text-primary text-[10px] font-label font-bold uppercase tracking-widest"
 						>Live Broadcast</span
@@ -68,11 +68,11 @@
 					>
 				</div>
 				<h2
-					class="font-headline text-5xl md:text-7xl font-extrabold tracking-tighter mb-6 text-white"
+					class="font-headline text-4xl md:text-7xl font-extrabold tracking-tighter mb-6 text-white break-words"
 				>
 					{stationName}
 				</h2>
-				<div class="flex items-center gap-4">
+				<div class="flex justify-center md:justify-start items-center gap-4">
 					<button
 						onclick={() => player.play(data.station)}
 						class="flex items-center gap-3 px-8 py-4 rounded-full bg-gradient-to-br from-primary to-primary-container text-on-primary-fixed font-headline font-bold text-lg hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary/20"
@@ -140,12 +140,12 @@
 							</p>
 						</div>
 					</div>
-					<div class="flex items-center gap-6">
-						<span class="text-xs text-on-surface-variant font-label tracking-widest">48:12</span>
-						<button class="text-primary hover:scale-110 transition-transform">
-							<span class="material-symbols-outlined">play_circle</span>
+					<div class="flex items-center gap-4">
+						<span class="text-xs text-on-surface-variant font-label tracking-widest hidden sm:inline">48:12</span>
+						<button class="h-11 w-11 flex items-center justify-center text-primary hover:scale-110 transition-transform">
+							<span class="material-symbols-outlined text-2xl">play_circle</span>
 						</button>
-						<button class="text-on-surface-variant hover:text-white transition-colors">
+						<button class="h-11 w-11 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-variant hover:text-white transition-colors">
 							<span class="material-symbols-outlined">more_vert</span>
 						</button>
 					</div>

@@ -2,6 +2,9 @@ package similarity
 
 import (
 	"context"
+	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -83,11 +86,50 @@ func (e *Engine) FindExplorationByVector(ctx context.Context, vector []float64, 
 }
 
 func (e *Engine) FindNearestNeighbors(ctx context.Context, trackID uint, k int, excludeIDs []uint) ([]types.Track, []float64, error) {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("neighbors:%d:", trackID))
+	
+	cloned := make([]uint, len(excludeIDs))
+	copy(cloned, excludeIDs)
+	slices.Sort(cloned)
+	for _, id := range cloned {
+		sb.WriteString(fmt.Sprintf("%d,", id))
+	}
+	key := sb.String()
+
+	if cached, ok := e.cache.Get(key); ok {
+		// Simple filtering for cached results
+		excludeMap := make(map[uint]bool)
+		for _, id := range excludeIDs {
+			excludeMap[id] = true
+		}
+		
+		var result []types.Track
+		for _, t := range cached {
+			if !excludeMap[t.ID] {
+				result = append(result, t)
+			}
+			if len(result) >= k {
+				break
+			}
+		}
+		if len(result) > 0 {
+			// We don't cache distances yet, so we return nil distances
+			// Callers should handle nil distances if they only care about tracks
+			return result, nil, nil
+		}
+	}
+
 	embedding, err := e.db.GetVectorByID(trackID)
 	if err != nil {
 		return nil, nil, err
 	}
-	return e.FindNearestByVector(ctx, embedding, k, excludeIDs)
+	
+	tracks, distances, err := e.FindNearestByVector(ctx, embedding, k, excludeIDs)
+	if err == nil {
+		e.cache.Set(key, tracks)
+	}
+	return tracks, distances, err
 }
 
 func NormalizeScore(distance float64, metric sqlite.DistanceMetric) float64 {

@@ -13,6 +13,7 @@ class QueueManager {
 	nextTrack = $state<Track | null>(null);
 	upcoming = $state<Track[]>([]);
 	isLoading = $state(false);
+	isAdvancing = $state(false);
 
 	async fetchQueue() {
 		const sessionId = sessionManager.getSessionId();
@@ -32,10 +33,12 @@ class QueueManager {
 	}
 
 	async advance() {
+		if (this.isAdvancing) return;
 		const sessionId = sessionManager.getSessionId();
 		if (!sessionId) return;
 
 		this.isLoading = true;
+		this.isAdvancing = true;
 		try {
 			const res = await fetch(`/api/queue/${sessionId}/advance`, { method: 'POST' });
 			if (res.ok) {
@@ -48,6 +51,7 @@ class QueueManager {
 			console.error('Advance queue error:', err);
 		} finally {
 			this.isLoading = false;
+			this.isAdvancing = false;
 		}
 	}
 }

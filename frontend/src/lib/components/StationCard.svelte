@@ -8,7 +8,7 @@
 </script>
 
 <div
-	class="group relative rounded-2xl bg-surface-container-low border border-outline-variant/10 p-6 hover:bg-surface-container transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.4)]"
+	class="group relative rounded-2xl bg-surface-container-low border border-outline-variant/10 p-4 md:p-6 hover:bg-surface-container transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.4)]"
 >
 	<a
 		href={`/station/${station.id}`}
@@ -16,15 +16,16 @@
 		aria-label={`View station details for ${station.name}`}
 	></a>
 
-	<div class="flex items-start justify-between mb-6 relative z-20">
+	<div class="flex items-start justify-between mb-4 md:mb-6 relative z-20">
 		<button
 			onclick={(e) => {
 				e.preventDefault();
 				e.stopPropagation();
 				player.play(station);
 			}}
-			class="h-14 w-14 rounded-xl bg-surface-container-highest flex items-center justify-center text-primary hover:bg-gradient-to-br hover:from-primary hover:to-primary-container hover:text-on-primary-fixed transition-all duration-300 shadow-inner shadow-white/5"
+			class="h-12 w-12 md:h-14 md:w-14 rounded-xl bg-surface-container-highest flex items-center justify-center text-primary hover:bg-gradient-to-br hover:from-primary hover:to-primary-container hover:text-on-primary-fixed transition-all duration-300 shadow-inner shadow-white/5"
 			title="Play Station"
+			aria-label={`Play Station ${station.name}`}
 		>
 			{#if player.currentStation?.id === station.id && player.isPlaying}
 				<span class="material-symbols-outlined text-3xl" style="font-variation-settings: 'FILL' 1;"
@@ -45,8 +46,9 @@
 				e.stopPropagation();
 				onDelete(station.id);
 			}}
-			class="h-10 w-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"
+			class="h-11 w-11 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"
 			title="Delete Station"
+			aria-label={`Delete Station ${station.name}`}
 		>
 			<span class="material-symbols-outlined">delete</span>
 		</button>

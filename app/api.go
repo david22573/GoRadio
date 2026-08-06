@@ -19,6 +19,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// RadioBrowserBaseURL can be overridden in tests
+var RadioBrowserBaseURL string
+
 // SearchCache implementation
 type cacheEntry struct {
 	data      []byte
@@ -36,6 +39,22 @@ func newSearchCache(ttl time.Duration) *searchCache {
 		entries: make(map[string]cacheEntry),
 		ttl:     ttl,
 	}
+}
+
+func (c *searchCache) StartCleanup() {
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		for range ticker.C {
+			c.mu.Lock()
+			now := time.Now()
+			for k, v := range c.entries {
+				if now.After(v.expiresAt) {
+					delete(c.entries, k)
+				}
+			}
+			c.mu.Unlock()
+		}
+	}()
 }
 
 func (c *searchCache) get(key string) ([]byte, bool) {
@@ -67,6 +86,7 @@ type APIHandler struct {
 func (a *APIHandler) RegisterAPI() {
 	// Initialize cache with a 15-minute TTL for search queries
 	a.cache = newSearchCache(15 * time.Minute)
+	a.cache.StartCleanup()
 
 	// Wire managers from app
 	a.sessionMgr = a.app.SessionMgr
@@ -115,15 +135,48 @@ func (a *APIHandler) SearchStations(c *gin.Context) {
 		return
 	}
 
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "12")
+
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		page = 1
+	}
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit < 1 {
+		limit = 12
+	}
+	if limit > 48 {
+		limit = 48
+	}
+
+	offset := (page - 1) * limit
+	cacheKey := fmt.Sprintf("search:stations:%s:p%d:l%d", query, page, limit)
+
 	// 1. Check local Go cache
-	if cachedData, found := a.cache.get(query); found {
+	if cachedData, found := a.cache.get(cacheKey); found {
 		c.Data(200, "application/json", cachedData)
 		return
 	}
 
 	// 2. Cache miss, fetch from upstream API
-	upstreamURL := fmt.Sprintf("https://de1.api.radio-browser.info/json/stations/search?name=%s&limit=12&hidebroken=true", url.QueryEscape(query))
-	resp, err := http.Get(upstreamURL)
+	baseURL := RadioBrowserBaseURL
+	if baseURL == "" {
+		baseURL = "https://de1.api.radio-browser.info"
+	}
+	upstreamURL := fmt.Sprintf("%s/json/stations/search?name=%s&limit=%d&offset=%d&hidebroken=true", baseURL, url.QueryEscape(query), limit, offset)
+	
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", upstreamURL, nil)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to create request"})
+		return
+	}
+	
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "failed to contact radio-browser api"})
 		return
@@ -147,9 +200,30 @@ func (a *APIHandler) SearchStations(c *gin.Context) {
 		return
 	}
 
+	var results []json.RawMessage
+	if err := json.Unmarshal(body, &results); err != nil {
+		c.JSON(500, gin.H{"error": "failed to parse upstream json"})
+		return
+	}
+
+	hasMore := len(results) == limit
+
+	responseObj := gin.H{
+		"page":     page,
+		"limit":    limit,
+		"has_more": hasMore,
+		"results":  results,
+	}
+
+	respBody, err := json.Marshal(responseObj)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to encode response"})
+		return
+	}
+
 	// 4. Save to cache and return
-	a.cache.set(query, body)
-	c.Data(200, "application/json", body)
+	a.cache.set(cacheKey, respBody)
+	c.Data(200, "application/json", respBody)
 }
 
 func (a *APIHandler) SearchTracks(c *gin.Context) {
@@ -230,7 +304,7 @@ func (a *APIHandler) ResolveTrack(c *gin.Context) {
 	// 2. Use yt-dlp to get the direct audio stream URL
 	// -g: get URL
 	// -f: bestaudio
-	cmd := exec.Command("yt-dlp", "-g", "-f", "bestaudio", trackURL)
+	cmd := exec.CommandContext(c.Request.Context(), "yt-dlp", "-g", "-f", "bestaudio", trackURL)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		c.JSON(500, gin.H{"error": "failed to resolve stream URL", "details": string(output)})

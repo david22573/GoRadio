@@ -82,13 +82,11 @@ func (c *Client) FindNearestNeighbors(trackID uint, k int, excludeIDs []uint) ([
 	}
 
 	query := `
-		SELECT track_id, vec_distance_l2(embedding, ?) as distance
+		SELECT track_id, distance
 		FROM track_vectors
-		WHERE track_id != ?
-		ORDER BY distance
-		LIMIT ?`
+		WHERE embedding MATCH ? AND k = ? AND track_id != ?`
 	
-	rows, err := c.db.Query(query, blob, trackID, k+len(excludeIDs))
+	rows, err := c.db.Query(query, blob, k+len(excludeIDs), trackID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -262,7 +260,7 @@ func (c *Client) SearchKNNWithDistances(embedding []float64, k int, metric Dista
 	case DistanceCosine:
 		query = `SELECT track_id, vec_distance_cosine(embedding, ?) as distance FROM track_vectors ORDER BY distance LIMIT ?`
 	default:
-		query = `SELECT track_id, vec_distance_l2(embedding, ?) as distance FROM track_vectors ORDER BY distance LIMIT ?`
+		query = `SELECT track_id, distance FROM track_vectors WHERE embedding MATCH ? AND k = ?`
 	}
 
 	rows, err := c.db.Query(query, blob, k)

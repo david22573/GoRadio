@@ -55,6 +55,15 @@ func (c *Client) DeleteSession(id string) error {
 	return err
 }
 
+func (c *Client) CleanupOldSessions(maxAge time.Duration) (int64, error) {
+	threshold := time.Now().Add(-maxAge)
+	res, err := c.db.Exec("DELETE FROM sessions WHERE last_activity_at < ?", threshold)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (c *Client) RecordPlayEvent(sessionID string, event types.PlayEvent) error {
 	query := `INSERT INTO session_events (session_id, track_id, event_type, completion, created_at)
               VALUES (?, ?, 'play', ?, ?)`
@@ -71,7 +80,7 @@ func (c *Client) RecordSkipEvent(sessionID string, event types.SkipEvent) error 
 
 func (c *Client) GetSessionEvents(sessionID string) ([]types.PlayEvent, []types.SkipEvent, error) {
 	query := `SELECT track_id, event_type, completion, played_for, created_at 
-              FROM session_events WHERE session_id = ? ORDER BY created_at ASC`
+              FROM session_events WHERE session_id = ? ORDER BY created_at DESC LIMIT 100`
 	
 	rows, err := c.db.Query(query, sessionID)
 	if err != nil {
@@ -98,8 +107,7 @@ func (c *Client) GetSessionEvents(sessionID string) ([]types.PlayEvent, []types.
 				TrackID:     trackID,
 				CompletedAt: createdAt,
 				Completion:  completion.Float64,
-				// StartedAt is not stored, can be estimated if needed
-				StartedAt: createdAt.Add(-time.Duration(completion.Float64*300) * time.Second), 
+				StartedAt:   createdAt.Add(-time.Duration(completion.Float64*300) * time.Second), 
 			})
 		} else if eventType == "skip" {
 			skips = append(skips, types.SkipEvent{
@@ -108,6 +116,14 @@ func (c *Client) GetSessionEvents(sessionID string) ([]types.PlayEvent, []types.
 				PlayedFor: int(playedFor.Int64),
 			})
 		}
+	}
+
+	// Reverse to maintain ASC order for the slice if needed by logic
+	for i, j := 0, len(plays)-1; i < j; i, j = i+1, j-1 {
+		plays[i], plays[j] = plays[j], plays[i]
+	}
+	for i, j := 0, len(skips)-1; i < j; i, j = i+1, j-1 {
+		skips[i], skips[j] = skips[j], skips[i]
 	}
 
 	return plays, skips, nil

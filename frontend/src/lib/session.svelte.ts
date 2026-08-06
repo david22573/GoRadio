@@ -11,6 +11,15 @@ class SessionManager {
 	constructor() {
 		if (typeof window !== 'undefined') {
 			this.resumeSession();
+			$effect.root(() => {
+				$effect(() => {
+					if (this.session) {
+						localStorage.setItem('goradio_session', JSON.stringify(this.session));
+					} else {
+						localStorage.removeItem('goradio_session');
+					}
+				});
+			});
 		}
 	}
 
@@ -26,7 +35,6 @@ class SessionManager {
 			const data = await res.json();
 			this.session = data;
 			this.isActive = true;
-			this.saveToStorage();
 		} catch (err) {
 			console.error('Session creation error:', err);
 		}
@@ -37,13 +45,6 @@ class SessionManager {
 			// Backend DELETE optional if we just want client-side expiry
 			this.session = null;
 			this.isActive = false;
-			localStorage.removeItem('goradio_session');
-		}
-	}
-
-	private saveToStorage() {
-		if (this.session) {
-			localStorage.setItem('goradio_session', JSON.stringify(this.session));
 		}
 	}
 

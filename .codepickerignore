@@ -1,12 +1,36 @@
-go.mod
-LICENSE
-README.md
+# Ignore build/dependency artifacts
+node_modules/
+frontend/node_modules/
+frontend/build/
+app/static/build/
+app/static/_app/
+
+# Ignore generated lockfiles
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
 go.sum
-codepicker_context.*
+
+# Ignore media and binary assets
+*.ico
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.webp
+
+# Ignore logs
+*.log
+GoRadio.log
+
+# Ignore documentation & legal
+LICENSE
 *.md
-./../*.md
-*.yml
-Dockerfile
-*.yaml
-*.json
-*.config.*
+README.md
+
+# Ignore CodePicker context/state files
+codepicker_context.txt
+test_context.txt
+*context.txt
+.codepicker/

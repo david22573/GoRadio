@@ -28,7 +28,7 @@
 
 		// Draw path
 		ctx.beginPath();
-		ctx.strokeStyle = '#3f3f46';
+		ctx.strokeStyle = '#484847'; // outline-variant
 		ctx.lineWidth = 1;
 		points.forEach((p, i) => {
 			const x = (p.x / 100) * w;
@@ -65,25 +65,25 @@
 	});
 </script>
 
-<div class="p-4 bg-zinc-900/50 rounded-xl border border-zinc-800 backdrop-blur-sm mt-4">
-	<h3 class="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-4">
+<div class="p-4 md:p-5 bg-surface-container rounded-2xl border border-outline-variant/10 backdrop-blur-sm mt-4">
+	<h3 class="text-[10px] text-on-surface-variant font-label font-bold uppercase tracking-widest mb-4">
 		Acoustic Journey
 	</h3>
 	<canvas
 		bind:this={canvas}
 		width="300"
 		height="200"
-		class="w-full h-auto rounded-lg bg-zinc-950/50"
+		class="w-full h-auto rounded-xl bg-surface-container-lowest"
 	></canvas>
-	<div class="flex gap-4 mt-3">
-		<div class="flex items-center gap-1.5 text-[10px] text-zinc-500">
-			<span class="w-2 h-2 rounded-full bg-amber-500"></span> Start
+	<div class="flex flex-wrap justify-between gap-2 mt-3">
+		<div class="flex items-center gap-1.5 text-[10px] font-label text-on-surface-variant">
+			<span class="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"></span> Start
 		</div>
-		<div class="flex items-center gap-1.5 text-[10px] text-zinc-500">
-			<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Similar
+		<div class="flex items-center gap-1.5 text-[10px] font-label text-on-surface-variant">
+			<span class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span> Similar
 		</div>
-		<div class="flex items-center gap-1.5 text-[10px] text-zinc-500">
-			<span class="w-2 h-2 rounded-full bg-purple-500"></span> Exploration
+		<div class="flex items-center gap-1.5 text-[10px] font-label text-on-surface-variant">
+			<span class="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]"></span> Exploration
 		</div>
 	</div>
 </div>

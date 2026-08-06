@@ -20,9 +20,9 @@
 </script>
 
 <div
-	class="bg-surface-container p-4 rounded-xl border border-outline-variant/10 flex items-center gap-4 group hover:border-primary/30 transition-colors"
+	class="bg-surface-container p-3 md:p-4 rounded-xl border border-outline-variant/10 flex items-center gap-3 md:gap-4 group hover:border-primary/30 transition-colors"
 >
-	<div class="h-12 w-12 rounded-lg bg-surface-container-highest flex items-center justify-center text-primary shrink-0">
+	<div class="h-10 w-10 md:h-12 md:w-12 rounded-lg bg-surface-container-highest flex items-center justify-center text-primary shrink-0">
 		<span class="material-symbols-outlined">music_note</span>
 	</div>
 	
@@ -33,7 +33,9 @@
 
 	<button
 		onclick={handlePlay}
-		class="h-10 w-10 rounded-full bg-surface-container-highest hover:bg-primary text-white hover:text-on-primary-fixed flex items-center justify-center transition-all shrink-0"
+		class="h-11 w-11 md:h-12 md:w-12 rounded-full bg-surface-container-highest hover:bg-primary text-white hover:text-on-primary-fixed flex items-center justify-center transition-all shrink-0"
+		title="Play Track"
+		aria-label={`Play Track ${track.title}`}
 	>
 		{#if isPlayingThis}
 			<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">pause</span>

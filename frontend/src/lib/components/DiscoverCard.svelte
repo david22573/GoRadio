@@ -22,7 +22,7 @@
 </script>
 
 <div
-	class="bg-surface-container p-5 rounded-2xl border border-outline-variant/10 flex flex-col gap-4 group hover:border-primary/30 transition-colors"
+	class="bg-surface-container p-4 md:p-5 rounded-2xl border border-outline-variant/10 flex flex-col gap-3 md:gap-4 group hover:border-primary/30 transition-colors"
 >
 	<div class="flex justify-between items-start gap-4">
 		<div class="overflow-hidden">
@@ -36,8 +36,9 @@
 		</div>
 		<button
 			onclick={() => onAdd(result)}
-			class="shrink-0 h-10 w-10 rounded-full bg-surface-container-highest hover:bg-primary text-white hover:text-on-primary-fixed flex items-center justify-center transition-all"
+			class="shrink-0 h-11 w-11 md:h-12 md:w-12 rounded-full bg-surface-container-highest hover:bg-primary text-white hover:text-on-primary-fixed flex items-center justify-center transition-all"
 			title="Add to Library"
+			aria-label={`Add ${result.name} to Library`}
 		>
 			<span class="material-symbols-outlined text-xl">add</span>
 		</button>
@@ -45,7 +46,7 @@
 
 	<button
 		onclick={handlePreview}
-		class="w-full py-2.5 rounded-lg bg-surface-container-highest hover:bg-primary hover:text-on-primary-fixed text-on-surface-variant transition-colors flex items-center justify-center gap-2 text-sm font-bold mt-auto"
+		class="w-full py-3 min-h-[44px] rounded-lg bg-surface-container-highest hover:bg-primary hover:text-on-primary-fixed text-on-surface-variant transition-colors flex items-center justify-center gap-2 text-sm font-bold mt-auto"
 	>
 		{#if isPlayingThis}
 			<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;"

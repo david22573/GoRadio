@@ -46,4 +46,22 @@
 	.hero-gradient {
 		background: linear-gradient(180deg, rgba(94, 180, 255, 0.15) 0%, rgba(14, 14, 14, 0) 100%);
 	}
+	.pb-safe {
+		padding-bottom: env(safe-area-inset-bottom, 20px);
+	}
+	.pt-safe {
+		padding-top: env(safe-area-inset-top, 20px);
+	}
+	.pl-safe {
+		padding-left: env(safe-area-inset-left, 0px);
+	}
+	.pr-safe {
+		padding-right: env(safe-area-inset-right, 0px);
+	}
+	.mb-safe {
+		margin-bottom: env(safe-area-inset-bottom, 20px);
+	}
+	.mt-safe {
+		margin-top: env(safe-area-inset-top, 20px);
+	}
 }

@@ -32,6 +32,9 @@ func NewSQLiteClient(filename string) (*Client, error) {
 		return nil, err
 	}
 
+	db.Exec("PRAGMA journal_mode=WAL;")
+	db.Exec("PRAGMA synchronous=NORMAL;")
+
 	// Performance Optimization: Connection Pooling
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
