@@ -68,7 +68,7 @@ func (a *App) InitializeDependencies() error {
 	a.AudioAnalyzer = audio.NewAnalyzer()
 
 	// 4. Initialize similarity engine
-	a.SimilarityEng = similarity.NewEngine(sqliteClient)
+	a.SimilarityEng = similarity.NewEngine(a.Ctx, sqliteClient)
 
 	// 5. Initialize session manager
 	a.SessionMgr = session.NewManager(sqliteClient)

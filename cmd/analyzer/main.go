@@ -34,34 +34,35 @@ func main() {
 	for _, s := range stations {
 		log.Printf("Processing: %s (%s)", s.Name, s.URL)
 
-		// Create temp file for sample
-		tempFile := fmt.Sprintf("data/sample_%d.wav", s.ID)
-		
-		// Sample 30 seconds using FFmpeg
-		err := sampleStream(s.URL, tempFile, 30)
-		if err != nil {
-			log.Printf("  [!] Sampling failed: %v", err)
-			continue
-		}
+		func() {
+			// Create temp file for sample
+			tempFile := fmt.Sprintf("data/sample_%d.wav", s.ID)
 
-		// Extract features
-		features, err := analyzer.AnalyzeFile(tempFile)
-		if err != nil {
-			log.Printf("  [!] Analysis failed: %v", err)
-			os.Remove(tempFile)
-			continue
-		}
+			// Guarantee cleanup with defer
+			defer os.Remove(tempFile)
 
-		// Update vector DB
-		err = db.InsertTrackVector(s.ID, features.Embedding)
-		if err != nil {
-			log.Printf("  [!] DB Insert failed: %v", err)
-		} else {
-			log.Printf("  [✓] Success: Vector stored")
-		}
+			// Sample 30 seconds using FFmpeg
+			err := sampleStream(s.URL, tempFile, 30)
+			if err != nil {
+				log.Printf("  [!] Sampling failed: %v", err)
+				return
+			}
 
-		// Cleanup
-		os.Remove(tempFile)
+			// Extract features
+			features, err := analyzer.AnalyzeFile(tempFile)
+			if err != nil {
+				log.Printf("  [!] Analysis failed: %v", err)
+				return
+			}
+
+			// Update vector DB
+			err = db.InsertTrackVector(s.ID, features.Embedding)
+			if err != nil {
+				log.Printf("  [!] DB Insert failed: %v", err)
+			} else {
+				log.Printf("  [✓] Success: Vector stored")
+			}
+		}()
 	}
 
 	log.Println("Batch analysis complete.")

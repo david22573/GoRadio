@@ -70,6 +70,12 @@ func (c *searchCache) get(key string) ([]byte, bool) {
 func (c *searchCache) set(key string, data []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	// Enforce hard capacity limit to prevent OOM
+	if len(c.entries) > 1000 {
+		c.entries = make(map[string]cacheEntry)
+	}
+
 	c.entries[key] = cacheEntry{
 		data:      data,
 		expiresAt: time.Now().Add(c.ttl),

@@ -22,16 +22,26 @@ func (m *Manager) generateNextWithQueue(ctx context.Context, sessionID string, q
 	}
 
 	// Combine PlayedIDs and Upcoming IDs to exclude
+	m.mu.RLock()
 	excludeIDs := make([]uint, 0, len(q.PlayedIDs)+len(q.Upcoming)+2)
 	excludeIDs = append(excludeIDs, q.PlayedIDs...)
 	for _, t := range q.Upcoming {
 		excludeIDs = append(excludeIDs, t.ID)
 	}
+	var currentID, nextID uint
 	if q.Current != nil {
-		excludeIDs = append(excludeIDs, q.Current.ID)
+		currentID = q.Current.ID
 	}
 	if q.Next != nil {
-		excludeIDs = append(excludeIDs, q.Next.ID)
+		nextID = q.Next.ID
+	}
+	m.mu.RUnlock()
+
+	if currentID != 0 {
+		excludeIDs = append(excludeIDs, currentID)
+	}
+	if nextID != 0 {
+		excludeIDs = append(excludeIDs, nextID)
 	}
 
 	// Decide: exploitation or exploration?

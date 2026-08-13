@@ -1,6 +1,7 @@
 package similarity
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -18,33 +19,39 @@ type VectorCache struct {
 	ttl   time.Duration
 }
 
-func NewVectorCache(ttl time.Duration) *VectorCache {
+func NewVectorCache(ctx context.Context, ttl time.Duration) *VectorCache {
 	vc := &VectorCache{
 		data: make(map[string]CacheEntry),
 		ttl:  ttl,
 	}
-	go vc.cleanupLoop()
+	go vc.cleanupLoop(ctx)
 	return vc
 }
 
-func (vc *VectorCache) cleanupLoop() {
+func (vc *VectorCache) cleanupLoop(ctx context.Context) {
 	ticker := time.NewTicker(15 * time.Minute)
-	for range ticker.C {
-		vc.mu.Lock()
-		now := time.Now()
-		for k, v := range vc.data {
-			if now.After(v.ExpiresAt) {
-				delete(vc.data, k)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			vc.mu.Lock()
+			now := time.Now()
+			for k, v := range vc.data {
+				if now.After(v.ExpiresAt) {
+					delete(vc.data, k)
+				}
 			}
+			vc.mu.Unlock()
 		}
-		vc.mu.Unlock()
 	}
 }
 
 func (vc *VectorCache) Get(key string) ([]types.Track, bool) {
 	vc.mu.RLock()
 	defer vc.mu.RUnlock()
-	
+
 	entry, ok := vc.data[key]
 	if !ok || time.Now().After(entry.ExpiresAt) {
 		return nil, false
@@ -55,7 +62,7 @@ func (vc *VectorCache) Get(key string) ([]types.Track, bool) {
 func (vc *VectorCache) Set(key string, tracks []types.Track) {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
-	
+
 	vc.data[key] = CacheEntry{
 		Tracks:    tracks,
 		ExpiresAt: time.Now().Add(vc.ttl),

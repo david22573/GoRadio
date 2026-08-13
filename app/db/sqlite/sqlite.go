@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -32,7 +33,9 @@ func NewSQLiteClient(filename string) (*Client, error) {
 		return nil, err
 	}
 
-	db.Exec("PRAGMA journal_mode=WAL;")
+	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		log.Printf("Warning: failed to set WAL journal mode: %v", err)
+	}
 	db.Exec("PRAGMA synchronous=NORMAL;")
 
 	// Performance Optimization: Connection Pooling

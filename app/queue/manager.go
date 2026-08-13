@@ -25,13 +25,13 @@ type Manager struct {
 }
 
 type Queue struct {
-	SessionID string         `json:"session_id"`
-	Current   *types.Track   `json:"current"`
-	Next      *types.Track   `json:"next"`
-	NextMode  string         `json:"next_mode"`
-	Upcoming  []*types.Track `json:"upcoming"`
-	PlayedIDs []uint         `json:"played_ids"`
-	LastAccess time.Time     `json:"-"`
+	SessionID  string         `json:"session_id"`
+	Current    *types.Track   `json:"current"`
+	Next       *types.Track   `json:"next"`
+	NextMode   string         `json:"next_mode"`
+	Upcoming   []*types.Track `json:"upcoming"`
+	PlayedIDs  []uint         `json:"played_ids"`
+	LastAccess time.Time      `json:"-"`
 }
 
 func NewManager(sm *session.Manager, se *similarity.Engine, db *sqlite.Client) *Manager {
@@ -45,7 +45,7 @@ func NewManager(sm *session.Manager, se *similarity.Engine, db *sqlite.Client) *
 		queues:        make(map[string]*Queue),
 		ttl:           time.Hour,
 	}
-	go m.cleanupLoop()
+	go m.cleanupLoop(context.Background())
 	return m
 }
 
@@ -75,16 +75,22 @@ func (m *Manager) getQueue(sessionID string) *Queue {
 	return m.queues[sessionID]
 }
 
-func (m *Manager) cleanupLoop() {
+func (m *Manager) cleanupLoop(ctx context.Context) {
 	ticker := time.NewTicker(10 * time.Minute)
-	for range ticker.C {
-		m.mu.Lock()
-		for id, q := range m.queues {
-			if time.Since(q.LastAccess) > m.ttl {
-				delete(m.queues, id)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.mu.Lock()
+			for id, q := range m.queues {
+				if time.Since(q.LastAccess) > m.ttl {
+					delete(m.queues, id)
+				}
 			}
+			m.mu.Unlock()
 		}
-		m.mu.Unlock()
 	}
 }
 
@@ -104,7 +110,7 @@ func (m *Manager) Advance(ctx context.Context, sessionID string) (*types.Track, 
 
 	mode := q.NextMode
 	q.Current = q.Next
-	
+
 	needsGenerate := false
 	if len(q.Upcoming) > 0 {
 		q.Next = q.Upcoming[0]
@@ -113,7 +119,7 @@ func (m *Manager) Advance(ctx context.Context, sessionID string) (*types.Track, 
 	} else {
 		needsGenerate = true
 	}
-	
+
 	needsDoubleGenerate := q.Current == nil
 	m.mu.Unlock()
 

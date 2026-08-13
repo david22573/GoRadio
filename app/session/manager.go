@@ -24,7 +24,7 @@ func NewManager(db *sqlite.Client) *Manager {
 		sessions: make(map[string]*SessionState),
 		ttl:      time.Hour,
 	}
-	go m.cleanupLoop()
+	go m.cleanupLoop(context.Background())
 	return m
 }
 
@@ -66,7 +66,7 @@ func (m *Manager) GetSession(id string) (*SessionState, error) {
 		if err != nil {
 			return nil, fmt.Errorf("session not found: %w", err)
 		}
-		
+
 		// Add to cache
 		m.mu.Lock()
 		m.sessions[id] = s
@@ -76,7 +76,7 @@ func (m *Manager) GetSession(id string) (*SessionState, error) {
 	s.LastActivityAt = time.Now()
 	// Async update DB
 	go m.db.UpdateSession(s)
-	
+
 	return s, nil
 }
 
@@ -198,11 +198,15 @@ func (m *Manager) LogSkipEvent(sessionID string, event SkipEvent) error {
 	return nil
 }
 
-func (m *Manager) cleanupLoop() {
+func (m *Manager) cleanupLoop(ctx context.Context) {
 	ticker := time.NewTicker(10 * time.Minute)
 	dbTicker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	defer dbTicker.Stop()
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case <-ticker.C:
 			m.mu.Lock()
 			for id, s := range m.sessions {

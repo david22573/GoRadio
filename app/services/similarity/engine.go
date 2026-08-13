@@ -19,10 +19,10 @@ type Engine struct {
 	mu    sync.RWMutex
 }
 
-func NewEngine(db *sqlite.Client) *Engine {
+func NewEngine(ctx context.Context, db *sqlite.Client) *Engine {
 	return &Engine{
 		db:    db,
-		cache: NewVectorCache(time.Hour),
+		cache: NewVectorCache(ctx, time.Hour),
 	}
 }
 
