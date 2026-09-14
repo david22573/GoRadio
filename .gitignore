@@ -35,4 +35,5 @@ go.work.sum
 # CodePicker
 .codepicker/
 codepicker.yaml
+codepicker_context.txt
 policy.json
