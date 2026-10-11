@@ -12,6 +12,11 @@ import (
 	"github.com/david22573/GoRadio/app/types"
 )
 
+const (
+	// defaultQueueCleanupInterval is how often idle in-memory queues are evicted.
+	defaultQueueCleanupInterval = 10 * time.Minute
+)
+
 type Manager struct {
 	sessionMgr    *session.Manager
 	similarityEng *similarity.Engine
@@ -22,6 +27,8 @@ type Manager struct {
 	queues map[string]*Queue
 	mu     sync.RWMutex
 	ttl    time.Duration
+
+	cleanupInterval time.Duration
 }
 
 type Queue struct {
@@ -34,64 +41,76 @@ type Queue struct {
 	LastAccess time.Time      `json:"-"`
 }
 
-func NewManager(sm *session.Manager, se *similarity.Engine, db *sqlite.Client) *Manager {
+// NewManager starts the cleanup loop. ctx controls the loop's lifetime: it stops
+// when ctx is cancelled (application shutdown).
+func NewManager(ctx context.Context, sm *session.Manager, se *similarity.Engine, db *sqlite.Client) *Manager {
 	cfg := config.DefaultPlaybackConfig()
 	m := &Manager{
-		sessionMgr:    sm,
-		similarityEng: se,
-		scheduler:     NewExplorationScheduler(cfg),
-		config:        cfg,
-		db:            db,
-		queues:        make(map[string]*Queue),
-		ttl:           time.Hour,
+		sessionMgr:      sm,
+		similarityEng:   se,
+		scheduler:       NewExplorationScheduler(cfg),
+		config:          cfg,
+		db:              db,
+		queues:          make(map[string]*Queue),
+		ttl:             time.Hour,
+		cleanupInterval: defaultQueueCleanupInterval,
 	}
-	go m.cleanupLoop(context.Background())
+	go m.cleanupLoop(ctx)
 	return m
 }
 
 func (m *Manager) GetQueue(sessionID string) (*Queue, error) {
-	m.mu.RLock()
-	q, ok := m.queues[sessionID]
-	m.mu.RUnlock()
+	// Look up and refresh the access clock in one critical section: the cleanup
+	// loop reads LastAccess under the same mutex, so doing both together
+	// prevents it from evicting the queue in the gap and handing the caller a
+	// queue that is no longer tracked.
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
+	q, ok := m.queues[sessionID]
 	if !ok {
-		m.mu.Lock()
-		// Double check
-		q, ok = m.queues[sessionID]
-		if !ok {
-			q = &Queue{
-				SessionID:  sessionID,
-				LastAccess: time.Now(),
-			}
-			m.queues[sessionID] = q
-		}
-		m.mu.Unlock()
+		q = &Queue{SessionID: sessionID}
+		m.queues[sessionID] = q
 	}
 	q.LastAccess = time.Now()
+
 	return q, nil
 }
 
-func (m *Manager) getQueue(sessionID string) *Queue {
-	return m.queues[sessionID]
-}
-
 func (m *Manager) cleanupLoop(ctx context.Context) {
-	ticker := time.NewTicker(10 * time.Minute)
+	interval := m.cleanupInterval
+	if interval <= 0 {
+		interval = defaultQueueCleanupInterval
+	}
+
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			m.mu.Lock()
-			for id, q := range m.queues {
-				if time.Since(q.LastAccess) > m.ttl {
-					delete(m.queues, id)
-				}
-			}
-			m.mu.Unlock()
+			m.evictIdleQueues(time.Now())
 		}
 	}
+}
+
+// evictIdleQueues drops in-memory queues untouched for longer than the TTL.
+func (m *Manager) evictIdleQueues(now time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, q := range m.queues {
+		if now.Sub(q.LastAccess) > m.ttl {
+			delete(m.queues, id)
+		}
+	}
+}
+
+// size returns the number of in-memory queues.
+func (m *Manager) size() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.queues)
 }
 
 func (m *Manager) Advance(ctx context.Context, sessionID string) (*types.Track, string, error) {
