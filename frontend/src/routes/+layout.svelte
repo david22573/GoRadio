@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '../app.css';
+	import { goto } from '$app/navigation';
 	import { player } from '$lib/player.svelte';
 	import { sessionManager } from '$lib/session.svelte';
 	import QueuePanel from '$lib/components/QueuePanel.svelte';
@@ -12,8 +13,22 @@
 		const target = e.target as HTMLInputElement;
 		player.setVolume(parseFloat(target.value));
 	}
-	
+
+	function formatTime(s: number) {
+		if (!isFinite(s) || s < 0) return '0:00';
+		const m = Math.floor(s / 60);
+		const sec = Math.floor(s % 60);
+		return `${m}:${sec.toString().padStart(2, '0')}`;
+	}
+
+	function submitHeaderSearch(e: Event) {
+		e.preventDefault();
+		const q = headerSearch.trim();
+		if (q) goto(`/?q=${encodeURIComponent(q)}#discover`);
+	}
+
 	let isPlayerExpanded = $state(false);
+	let headerSearch = $state('');
 </script>
 
 <aside
@@ -66,18 +81,19 @@
 	class="fixed top-0 right-0 w-full md:w-[calc(100%-16rem)] h-16 pt-safe box-content bg-[#0e0e0e]/70 backdrop-blur-xl flex justify-between items-center px-4 md:px-8 z-40"
 >
 	<div class="flex items-center gap-4 w-[60%] md:w-1/2">
-		<div class="relative w-full max-w-md">
+		<form onsubmit={submitHeaderSearch} class="relative w-full max-w-md">
 			<span
 				class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant"
 				>search</span
 			>
 			<input
+				bind:value={headerSearch}
 				aria-label="Search frequencies globally"
 				class="w-full bg-surface-container-highest border-none rounded-full py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-primary text-white focus:outline-none"
 				placeholder="Search frequencies..."
 				type="text"
 			/>
-		</div>
+		</form>
 	</div>
 	<div class="flex items-center gap-3 md:gap-6">
 		<button
@@ -170,12 +186,17 @@
 				min="0"
 				max={player.duration || 100}
 				value={player.currentTime}
+				aria-label="Seek"
 				oninput={(e) => player.seek(parseFloat((e.target as HTMLInputElement).value))}
 				class="w-full h-1 bg-white/20 rounded-full appearance-none cursor-pointer accent-primary"
 			/>
 			<div class="flex justify-between w-full mt-2 text-xs text-on-surface-variant font-label">
-				<span>0:00</span>
-				<span>-:-</span>
+				<span>{formatTime(player.currentTime)}</span>
+				<span
+					>{player.currentStation && !player.currentTrack
+						? 'LIVE'
+						: formatTime(player.duration)}</span
+				>
 			</div>
 		</div>
 		<div class="w-full flex justify-center items-center gap-8 mb-auto">
@@ -216,6 +237,7 @@
 			min="0"
 			max={player.duration || 100}
 			value={player.currentTime}
+			aria-label="Seek"
 			oninput={(e) => player.seek(parseFloat((e.target as HTMLInputElement).value))}
 			class="absolute top-0 left-1/2 -translate-x-1/2 w-[calc(100%-6rem)] h-1 bg-white/20 rounded-full appearance-none cursor-pointer accent-primary -translate-y-1/2 z-50"
 		/>
@@ -320,6 +342,7 @@
 				max="1"
 				step="0.05"
 				value={player.volume}
+				aria-label="Volume"
 				oninput={handleVolume}
 				class="w-24 accent-primary cursor-pointer"
 			/>

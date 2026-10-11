@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/stores';
 	import StationCard from '$lib/components/StationCard.svelte';
 	import DiscoverCard from '$lib/components/DiscoverCard.svelte';
 	import TrackCard from '$lib/components/TrackCard.svelte';
@@ -18,6 +19,15 @@
 	
 	let searchAbortController: AbortController | null = null;
 	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	// Honor ?q= deep links (e.g. from the global header search)
+	$effect(() => {
+		const q = $page.url.searchParams.get('q');
+		if (q && q !== searchQuery) {
+			searchQuery = q;
+			executeSearch(true);
+		}
+	});
 
 	// Track Search State
 	let trackSearchQuery = $state('');

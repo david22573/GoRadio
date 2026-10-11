@@ -6,11 +6,25 @@
 
 	let stationName = $state('');
 	let stationUrl = $state('');
+	let shareFeedback = $state('');
 
 	$effect(() => {
 		stationName = data.station?.name || '';
 		stationUrl = data.station?.url || '';
 	});
+
+	async function shareStation() {
+		try {
+			await navigator.clipboard.writeText(window.location.href);
+			shareFeedback = 'Station link copied to clipboard';
+		} catch (err) {
+			console.error('Share failed:', err);
+			shareFeedback = 'Could not copy link';
+		}
+		setTimeout(() => {
+			shareFeedback = '';
+		}, 2500);
+	}
 
 	async function updateStation(e: Event) {
 		e.preventDefault();
@@ -40,6 +54,7 @@
 	}
 </script>
 
+{#if data.station}
 <main class="h-full">
 	<section class="relative px-4 md:px-8 pt-8 md:pt-12 pb-12 md:pb-16 hero-gradient overflow-hidden">
 		<div class="flex flex-col md:flex-row gap-6 md:gap-10 items-center md:items-end relative z-10 text-center md:text-left">
@@ -92,15 +107,23 @@
 
 					<button
 						class="h-14 w-14 rounded-full flex items-center justify-center border border-outline-variant/30 text-on-surface hover:bg-surface-container-highest transition-colors"
+						title="Save to favorites"
+						aria-label="Save station to favorites"
 					>
 						<span class="material-symbols-outlined">favorite</span>
 					</button>
 					<button
+						onclick={shareStation}
 						class="h-14 w-14 rounded-full flex items-center justify-center border border-outline-variant/30 text-on-surface hover:bg-surface-container-highest transition-colors"
+						title="Share station"
+						aria-label="Share station"
 					>
 						<span class="material-symbols-outlined">share</span>
 					</button>
 				</div>
+				{#if shareFeedback}
+					<p class="text-xs text-primary mt-2 font-label" role="status">{shareFeedback}</p>
+				{/if}
 			</div>
 		</div>
 		<div class="absolute -top-32 -left-32 w-96 h-96 bg-primary/10 rounded-full blur-[120px]"></div>
@@ -218,3 +241,20 @@
 		</section>
 	</div>
 </main>
+{:else}
+	<div class="flex flex-col items-center justify-center py-24 px-4 text-center h-full">
+		<span class="material-symbols-outlined text-7xl text-on-surface-variant mb-6 opacity-50"
+			>radio_tower</span
+		>
+		<h2 class="font-headline text-3xl font-extrabold text-white mb-3">Station Not Found</h2>
+		<p class="text-on-surface-variant text-sm max-w-md mb-8">
+			This frequency doesn't exist or may have been removed from your library.
+		</p>
+		<a
+			href="/"
+			class="px-8 py-3 rounded-full bg-primary text-on-primary-fixed font-bold font-label tracking-widest text-xs uppercase hover:scale-105 active:scale-95 transition-all min-h-[44px] inline-flex items-center"
+		>
+			Back to Frequencies
+		</a>
+	</div>
+{/if}

@@ -5,5 +5,6 @@ export const load = async ({ fetch }) => {
 		return { stations: data.stations };
 	} catch (error) {
 		console.error(error);
+		return { stations: [] };
 	}
 };
