@@ -73,6 +73,7 @@
 		bind:this={canvas}
 		width="300"
 		height="200"
+		aria-label="Visualization of your acoustic journey across similar and exploration tracks"
 		class="w-full h-auto rounded-xl bg-surface-container-lowest"
 	></canvas>
 	<div class="flex flex-wrap justify-between gap-2 mt-3">

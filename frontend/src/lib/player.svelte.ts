@@ -229,11 +229,17 @@ class AudioPlayer {
 			body.started_at = new Date().toISOString();
 		}
 
-		await fetch(`/api/events/${type}`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(body)
-		});
+		try {
+			await fetch(`/api/events/${type}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+		} catch (err) {
+			// Analytics must never break playback flow: skip() and handleTrackEnd()
+			// await this call before advancing the queue.
+			console.error(`Failed to record ${type} event:`, err);
+		}
 	}
 
 	togglePlay() {

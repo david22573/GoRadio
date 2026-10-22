@@ -3,21 +3,36 @@
 
 	let { result, onAdd } = $props<{
 		result: any;
-		onAdd: (result: any) => void;
+		onAdd: (result: any) => void | Promise<void>;
 	}>();
 
 	// Computed state for the preview player
 	let previewId = $derived(`preview-${result.stationuuid}`);
 	let isPlayingThis = $derived(player.currentStation?.id === previewId && player.isPlaying);
 	let isLoadingThis = $derived(player.currentStation?.id === previewId && player.isLoading);
+	let adding = $state(false);
 
 	function handlePreview(e: Event) {
 		e.preventDefault();
-		player.play({
-			id: previewId,
-			name: result.name,
-			url: result.url_resolved || result.url
-		});
+		if (isPlayingThis) {
+			player.togglePlay();
+		} else {
+			player.play({
+				id: previewId,
+				name: result.name,
+				url: result.url_resolved || result.url
+			});
+		}
+	}
+
+	async function handleAdd() {
+		if (adding) return;
+		adding = true;
+		try {
+			await onAdd(result);
+		} finally {
+			adding = false;
+		}
 	}
 </script>
 
@@ -35,12 +50,17 @@
 			</div>
 		</div>
 		<button
-			onclick={() => onAdd(result)}
-			class="shrink-0 h-11 w-11 md:h-12 md:w-12 rounded-full bg-surface-container-highest hover:bg-primary text-white hover:text-on-primary-fixed flex items-center justify-center transition-all"
+			onclick={handleAdd}
+			disabled={adding}
+			class="shrink-0 h-11 w-11 md:h-12 md:w-12 rounded-full bg-surface-container-highest hover:bg-primary text-white hover:text-on-primary-fixed flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed"
 			title="Add to Library"
 			aria-label={`Add ${result.name} to Library`}
 		>
-			<span class="material-symbols-outlined text-xl">add</span>
+			{#if adding}
+				<span class="material-symbols-outlined text-xl animate-spin">progress_activity</span>
+			{:else}
+				<span class="material-symbols-outlined text-xl">add</span>
+			{/if}
 		</button>
 	</div>
 
