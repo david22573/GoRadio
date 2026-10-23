@@ -48,7 +48,7 @@ func (e *Engine) FindNearestByVector(ctx context.Context, vector []float64, k in
 			continue
 		}
 		track, err := e.db.GetTrackByID(id)
-		if err == nil {
+		if err == nil && track != nil {
 			resultTracks = append(resultTracks, *track)
 			resultDistances = append(resultDistances, distances[i])
 		}

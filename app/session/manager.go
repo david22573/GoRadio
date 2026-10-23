@@ -215,6 +215,15 @@ func (m *Manager) Create(seedTrackID uint) (*SessionState, error) {
 }
 
 func (m *Manager) RecordPlay(sessionID string, trackID uint, completion float64) error {
+	// Clamp completion to [0,1] so the started-at heuristic stays sane even for
+	// malformed client input.
+	if completion < 0 {
+		completion = 0
+	}
+	if completion > 1 {
+		completion = 1
+	}
+
 	event := PlayEvent{
 		TrackID:     trackID,
 		StartedAt:   time.Now().Add(-time.Duration(completion*300) * time.Second), // Heuristic
@@ -383,4 +392,32 @@ func (m *Manager) size() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.sessions)
+}
+
+// Snapshot returns a deep copy of a session that is safe to marshal to JSON
+// without holding m.mu. API handlers would otherwise serialize the live
+// SessionState while evolveVector/RecordPlay/RecordSkip mutate it under the lock.
+func (m *Manager) Snapshot(id string) (*SessionState, error) {
+	s, err := m.GetSession(id)
+	if err != nil {
+		return nil, err
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return cloneSession(s), nil
+}
+
+// cloneSession deep-copies all mutable slices of a session so the copy can be
+// read outside the lock. Callers must hold m.mu (read or write).
+func cloneSession(s *SessionState) *SessionState {
+	if s == nil {
+		return nil
+	}
+	cp := *s
+	cp.CurrentVector = append([]float64(nil), s.CurrentVector...)
+	cp.OriginVector = append([]float64(nil), s.OriginVector...)
+	cp.PlayHistory = append([]PlayEvent(nil), s.PlayHistory...)
+	cp.SkipHistory = append([]SkipEvent(nil), s.SkipHistory...)
+	return &cp
 }

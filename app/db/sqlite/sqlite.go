@@ -3,7 +3,6 @@ package sqlite
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -33,9 +32,10 @@ func NewSQLiteClient(filename string) (*Client, error) {
 		return nil, err
 	}
 
-	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
-		log.Printf("Warning: failed to set WAL journal mode: %v", err)
-	}
+	// NOTE: WAL mode is deliberately avoided here. The ncruces/go-sqlite3
+	// (wazero/WASM) runtime crashes with "out of bounds memory access" in
+	// walIndexAppend on commit when WAL is enabled. Fall back to SQLite's
+	// default rollback journal, which is fully supported in WASM.
 	db.Exec("PRAGMA synchronous=NORMAL;")
 
 	// Performance Optimization: Connection Pooling
@@ -112,8 +112,16 @@ func (c *Client) DeleteShow(id uint) error {
 	return err
 }
 
+func (c *Client) GetAllTracks() ([]types.Track, error) {
+	return queryMultiple(c.db, scanTrack, "SELECT id, station_id, title, artist, url, duration, analyzed_at FROM tracks")
+}
+
 func (c *Client) GetTracksByStation(stationID uint) ([]types.Track, error) {
 	return queryMultiple(c.db, scanTrack, "SELECT id, station_id, title, artist, url, duration, analyzed_at FROM tracks WHERE station_id = ?", stationID)
+}
+
+func (c *Client) GetTrackByURL(url string) (*types.Track, error) {
+	return querySingle(c.db, scanTrack, "SELECT id, station_id, title, artist, url, duration, analyzed_at FROM tracks WHERE url = ?", url)
 }
 
 func (c *Client) GetTrackByID(id uint) (*types.Track, error) {

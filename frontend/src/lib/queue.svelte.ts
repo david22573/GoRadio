@@ -42,8 +42,8 @@ class QueueManager {
 		try {
 			const res = await fetch(`/api/queue/${sessionId}/advance`, { method: 'POST' });
 			if (res.ok) {
-				const track = await res.json();
-				this.currentTrack = track;
+				const data = await res.json();
+				this.currentTrack = data.track || null;
 				// After advancing, the queue state on backend changes, so refresh
 				await this.fetchQueue();
 			}

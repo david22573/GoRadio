@@ -8,6 +8,9 @@ import (
 	"github.com/david22573/GoRadio/app/types"
 )
 
+// ErrNotFound is returned by querySingle when a lookup yields no rows.
+var ErrNotFound = errors.New("sqlite: not found")
+
 // QueryMultiple executes a query expected to return multiple rows.
 func queryMultiple[T any](
 	db *sql.DB,
@@ -60,7 +63,7 @@ func querySingle[T any](
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
-	return nil, nil
+	return nil, ErrNotFound
 }
 
 // execInsert handles INSERT statements and returns the last inserted ID.

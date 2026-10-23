@@ -113,6 +113,42 @@ func (m *Manager) size() int {
 	return len(m.queues)
 }
 
+// Snapshot returns a deep copy of a queue that is safe to marshal to JSON
+// without holding m.mu. Without this, API handlers would serialize the live
+// Queue while Advance/Preload mutate it under the lock, causing data races.
+func (m *Manager) Snapshot(sessionID string) *Queue {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	q, ok := m.queues[sessionID]
+	if !ok {
+		return &Queue{SessionID: sessionID}
+	}
+	return cloneQueue(q)
+}
+
+func cloneQueue(q *Queue) *Queue {
+	if q == nil {
+		return nil
+	}
+	c := *q
+	c.Current = cloneTrack(q.Current)
+	c.Next = cloneTrack(q.Next)
+	c.Upcoming = make([]*types.Track, len(q.Upcoming))
+	for i, t := range q.Upcoming {
+		c.Upcoming[i] = cloneTrack(t)
+	}
+	c.PlayedIDs = append([]uint(nil), q.PlayedIDs...)
+	return &c
+}
+
+func cloneTrack(t *types.Track) *types.Track {
+	if t == nil {
+		return nil
+	}
+	cp := *t
+	return &cp
+}
+
 func (m *Manager) Advance(ctx context.Context, sessionID string) (*types.Track, string, error) {
 	q, err := m.GetQueue(sessionID)
 	if err != nil {

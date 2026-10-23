@@ -23,12 +23,24 @@ class SessionManager {
 		}
 	}
 
-	async createSession(seedTrackId: number): Promise<void> {
+	async createSession(seedTrack: any): Promise<void> {
 		try {
+			const body: any = {};
+			if (seedTrack && typeof seedTrack === 'object') {
+				body.seed_track = {
+					url: seedTrack.url || '',
+					title: seedTrack.title || '',
+					artist: seedTrack.artist || ''
+				};
+				if (seedTrack.id) body.seed_track_id = seedTrack.id;
+			} else if (typeof seedTrack === 'number') {
+				body.seed_track_id = seedTrack;
+			}
+
 			const res = await fetch('/api/sessions', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ seed_track_id: seedTrackId })
+				body: JSON.stringify(body)
 			});
 			if (!res.ok) throw new Error('Failed to create session');
 

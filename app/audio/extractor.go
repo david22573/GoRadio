@@ -121,7 +121,7 @@ func (e *Extractor) calculateTempo(data []float64, sampleRate float64) float64 {
 }
 
 func (e *Extractor) calculateSpectralCentroid(data []float64, sampleRate float64) float64 {
-	if len(data) == 0 {
+	if len(data) <= 1 {
 		return 0
 	}
 	

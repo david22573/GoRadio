@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -71,9 +72,16 @@ func (c *searchCache) set(key string, data []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Enforce hard capacity limit to prevent OOM
-	if len(c.entries) > 1000 {
-		c.entries = make(map[string]cacheEntry)
+	// Enforce hard capacity limit to prevent OOM. Evict a single arbitrary
+	// entry instead of clearing the whole map (which would cause a cache
+	// stampede under load).
+	if len(c.entries) >= 1000 {
+		if _, exists := c.entries[key]; !exists {
+			for k := range c.entries {
+				delete(c.entries, k)
+				break
+			}
+		}
 	}
 
 	c.entries[key] = cacheEntry{
@@ -270,10 +278,14 @@ func (a *APIHandler) SearchTracks(c *gin.Context) {
 			for _, line := range lines {
 				parts := strings.Split(line, " || ")
 				if len(parts) >= 4 {
+					id := strings.TrimSpace(parts[1])
+					if id == "" {
+						continue
+					}
 					tracks = append(tracks, types.Track{
 						Title:  strings.TrimSpace(parts[0]),
 						Artist: strings.TrimSpace(parts[3]),
-						URL:    "https://www.youtube.com/watch?v=" + strings.TrimSpace(parts[1]),
+						URL:    "https://www.youtube.com/watch?v=" + id,
 					})
 				}
 			}
@@ -307,7 +319,13 @@ func (a *APIHandler) ResolveTrack(c *gin.Context) {
 		return
 	}
 
-	// 2. Use yt-dlp to get the direct audio stream URL
+	// 2. Validate the URL host before handing it to yt-dlp (SSRF guard).
+	if !isAllowedResolveURL(trackURL) {
+		c.JSON(400, gin.H{"error": "url host not allowed"})
+		return
+	}
+
+	// 3. Use yt-dlp to get the direct audio stream URL
 	// -g: get URL
 	// -f: bestaudio
 	cmd := exec.CommandContext(c.Request.Context(), "yt-dlp", "-g", "-f", "bestaudio", trackURL)
@@ -432,21 +450,38 @@ func (a *APIHandler) DeleteShow(c *gin.Context) {
 // Session Handlers
 func (a *APIHandler) CreateSession(c *gin.Context) {
 	var req struct {
-		SeedTrackID uint `json:"seed_track_id"`
+		SeedTrackID uint         `json:"seed_track_id"`
+		SeedTrack   *types.Track `json:"seed_track"`
 	}
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Validation: Verify track exists
-	_, err := a.app.DB.GetTrackByID(req.SeedTrackID)
-	if err != nil {
-		c.JSON(404, gin.H{"error": "seed track not found"})
+	seedTrackID := req.SeedTrackID
+
+	// A seed_track object means the caller is handing us track metadata (e.g. a
+	// YouTube search result whose id is 0). Ingest it as a real tracks row and
+	// generate its vector so it can be seeded and found by the queue.
+	if req.SeedTrack != nil {
+		id, err := a.ingestSeedTrack(c.Request.Context(), req.SeedTrack)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to ingest seed track: " + err.Error()})
+			return
+		}
+		seedTrackID = id
+	} else if seedTrackID == 0 {
+		c.JSON(400, gin.H{"error": "seed_track_id or seed_track is required"})
 		return
+	} else {
+		// Legacy path: verify the referenced track exists.
+		if _, err := a.app.DB.GetTrackByID(seedTrackID); err != nil {
+			c.JSON(404, gin.H{"error": "seed track not found"})
+			return
+		}
 	}
 
-	s, err := a.sessionMgr.Create(req.SeedTrackID)
+	s, err := a.sessionMgr.Create(seedTrackID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -454,9 +489,82 @@ func (a *APIHandler) CreateSession(c *gin.Context) {
 	c.JSON(201, s)
 }
 
+// seedEmbeddingDim is the fixed dimension of track embeddings (matches the
+// track_vectors vec0 schema) used for the fallback vector.
+const seedEmbeddingDim = 128
+
+// ingestSeedTrack persists the given track metadata as a real tracks row (reusing
+// an existing row with the same URL), generates its embedding best-effort, and
+// returns the track ID. Analysis failure never blocks session creation: a zero
+// vector is stored as a fallback so the session manager can always find a seed
+// vector.
+func (a *APIHandler) ingestSeedTrack(ctx context.Context, t *types.Track) (uint, error) {
+	if t == nil || (t.URL == "" && t.Title == "") {
+		return 0, fmt.Errorf("seed track metadata is empty")
+	}
+
+	// Reuse an existing row with the same URL so repeated plays of the same
+	// search result don't create duplicate tracks.
+	if t.URL != "" {
+		if existing, err := a.app.DB.GetTrackByURL(t.URL); err == nil && existing != nil {
+			// Only re-analyze when the existing track has no vector yet.
+			if _, err := a.app.DB.GetTrackVector(existing.ID); err != nil {
+				a.ensureTrackVector(ctx, existing.ID, existing.URL)
+			}
+			return existing.ID, nil
+		}
+	}
+
+	id, err := a.app.DB.CreateTrack(types.Track{
+		Title:  t.Title,
+		Artist: t.Artist,
+		URL:    t.URL,
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	a.ensureTrackVector(ctx, id, t.URL)
+	return id, nil
+}
+
+// ensureTrackVector generates and stores an embedding for trackID, falling back
+// to a zero vector when audio tooling is unavailable, so session creation never
+// hard-fails because ffmpeg/yt-dlp are missing.
+func (a *APIHandler) ensureTrackVector(ctx context.Context, trackID uint, url string) {
+	if url == "" {
+		a.insertFallbackVector(trackID, "no URL to analyze")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	features, err := a.app.AudioAnalyzer.AnalyzeURL(ctx, url, 30)
+	if err != nil {
+		log.Printf("warning: failed to analyze seed track %d: %v", trackID, err)
+		a.insertFallbackVector(trackID, "")
+		return
+	}
+	if err := a.app.DB.InsertTrackVector(trackID, features.Embedding); err != nil {
+		log.Printf("warning: failed to store vector for seed track %d: %v", trackID, err)
+	}
+}
+
+// insertFallbackVector stores a zero vector so GetVectorByID succeeds even when
+// audio analysis is unavailable.
+func (a *APIHandler) insertFallbackVector(trackID uint, reason string) {
+	if reason != "" {
+		log.Printf("warning: seed track %d: %s; using fallback vector", trackID, reason)
+	}
+	if err := a.app.DB.InsertTrackVector(trackID, make([]float64, seedEmbeddingDim)); err != nil {
+		log.Printf("warning: failed to store fallback vector for seed track %d: %v", trackID, err)
+	}
+}
+
 func (a *APIHandler) GetSession(c *gin.Context) {
 	id := c.Param("id")
-	s, err := a.sessionMgr.GetSession(id)
+	s, err := a.sessionMgr.Snapshot(id)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "session not found"})
 		return
@@ -467,11 +575,7 @@ func (a *APIHandler) GetSession(c *gin.Context) {
 // Queue Handlers
 func (a *APIHandler) GetQueue(c *gin.Context) {
 	sessionID := c.Param("sessionId")
-	q, err := a.queueMgr.GetQueue(sessionID)
-	if err != nil {
-		c.JSON(404, gin.H{"error": "queue not found"})
-		return
-	}
+	q := a.queueMgr.Snapshot(sessionID)
 	c.JSON(200, q)
 }
 
@@ -492,11 +596,7 @@ func (a *APIHandler) AdvanceQueue(c *gin.Context) {
 
 func (a *APIHandler) GetUpcoming(c *gin.Context) {
 	sessionID := c.Param("sessionId")
-	q, err := a.queueMgr.GetQueue(sessionID)
-	if err != nil {
-		c.JSON(404, gin.H{"error": "queue not found"})
-		return
-	}
+	q := a.queueMgr.Snapshot(sessionID)
 	c.JSON(200, gin.H{"upcoming": q.Upcoming})
 }
 
@@ -541,22 +641,22 @@ func (a *APIHandler) RecordSkipEvent(c *gin.Context) {
 
 func (a *APIHandler) GetSessionMetrics(c *gin.Context) {
 	id := c.Param("id")
-	metrics, err := a.sessionMgr.GetMetrics(id)
+	s, err := a.sessionMgr.Snapshot(id)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "session not found"})
 		return
 	}
-	c.JSON(200, metrics)
+	c.JSON(200, s.CalculateMetrics())
 }
 
 func (a *APIHandler) GetSessionJourney(c *gin.Context) {
 	id := c.Param("id")
-	journey, err := a.sessionMgr.GetJourney(id)
+	s, err := a.sessionMgr.Snapshot(id)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "session not found"})
 		return
 	}
-	c.JSON(200, gin.H{"journey": journey})
+	c.JSON(200, gin.H{"journey": s.GetJourney()})
 }
 
 func getUintParam(c *gin.Context, param string) (uint, error) {
@@ -565,5 +665,40 @@ func getUintParam(c *gin.Context, param string) (uint, error) {
 	if err != nil {
 		return 0, err
 	}
+	if idInt <= 0 {
+		return 0, fmt.Errorf("invalid %s: must be a positive integer", param)
+	}
 	return uint(idInt), nil
+}
+
+// allowedResolveHosts is the allowlist of hosts that ResolveTrack will pass to
+// yt-dlp. This prevents the resolve endpoint from being used as an SSRF oracle.
+var allowedResolveHosts = map[string]bool{
+	"youtube.com":        true,
+	"www.youtube.com":    true,
+	"youtu.be":           true,
+	"soundcloud.com":     true,
+	"www.soundcloud.com": true,
+}
+
+// isAllowedResolveURL reports whether raw is an http(s) URL whose host is an
+// allowed resolve host or one of its subdomains.
+func isAllowedResolveURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if allowedResolveHosts[host] {
+		return true
+	}
+	for allowed := range allowedResolveHosts {
+		if strings.HasSuffix(host, "."+allowed) {
+			return true
+		}
+	}
+	return false
 }
