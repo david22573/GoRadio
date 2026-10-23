@@ -19,7 +19,9 @@ type Client interface {
 	DeleteShow(id uint) error
 
 	// Tracks
+	GetAllTracks() ([]types.Track, error)
 	GetTrackByID(id uint) (*types.Track, error)
+	GetTrackByURL(url string) (*types.Track, error)
 	GetTracksByStation(stationID uint) ([]types.Track, error)
 	CreateTrack(track types.Track) (uint, error)
 	CreateTracksBatch(tracks []types.Track) error

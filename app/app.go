@@ -71,10 +71,11 @@ func (a *App) InitializeDependencies() error {
 	a.SimilarityEng = similarity.NewEngine(a.Ctx, sqliteClient)
 
 	// 5. Initialize session manager
-	a.SessionMgr = session.NewManager(sqliteClient)
+	a.SessionMgr = session.NewManager(a.Ctx, sqliteClient)
 
 	// 6. Initialize queue manager (depends on session + similarity)
 	a.QueueMgr = queue.NewManager(
+		a.Ctx,
 		a.SessionMgr,
 		a.SimilarityEng,
 		sqliteClient,

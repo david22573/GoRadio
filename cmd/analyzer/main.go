@@ -2,10 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"os"
-	"os/exec"
 	"time"
 
 	"github.com/david22573/GoRadio/app/audio"
@@ -23,71 +20,43 @@ func main() {
 	// 2. Initialize Analyzer
 	analyzer := audio.NewAnalyzer()
 
-	// 3. Get all stations
-	stations, err := db.GetAllStations()
+	// 3. Get all tracks
+	tracks, err := db.GetAllTracks()
 	if err != nil {
-		log.Fatalf("Failed to get stations: %v", err)
+		log.Fatalf("Failed to get tracks: %v", err)
 	}
 
-	log.Printf("Starting batch analysis for %d stations...", len(stations))
+	if len(tracks) == 0 {
+		log.Println("No tracks to analyze.")
+		return
+	}
 
-	for _, s := range stations {
-		log.Printf("Processing: %s (%s)", s.Name, s.URL)
+	log.Printf("Starting batch analysis for %d tracks...", len(tracks))
 
-		func() {
-			// Create temp file for sample
-			tempFile := fmt.Sprintf("data/sample_%d.wav", s.ID)
+	for _, t := range tracks {
+		log.Printf("Processing: %s (%s)", t.Title, t.URL)
 
-			// Guarantee cleanup with defer
-			defer os.Remove(tempFile)
+		if t.URL == "" {
+			log.Printf("  [!] Skipping: no URL")
+			continue
+		}
 
-			// Sample 30 seconds using FFmpeg
-			err := sampleStream(s.URL, tempFile, 30)
-			if err != nil {
-				log.Printf("  [!] Sampling failed: %v", err)
-				return
-			}
+		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+		features, err := analyzer.AnalyzeURL(ctx, t.URL, 30)
+		cancel()
+		if err != nil {
+			log.Printf("  [!] Analysis failed: %v", err)
+			continue
+		}
 
-			// Extract features
-			features, err := analyzer.AnalyzeFile(tempFile)
-			if err != nil {
-				log.Printf("  [!] Analysis failed: %v", err)
-				return
-			}
-
-			// Update vector DB
-			err = db.InsertTrackVector(s.ID, features.Embedding)
-			if err != nil {
-				log.Printf("  [!] DB Insert failed: %v", err)
-			} else {
-				log.Printf("  [✓] Success: Vector stored")
-			}
-		}()
+		// Update vector DB keyed by the real track id
+		err = db.InsertTrackVector(t.ID, features.Embedding)
+		if err != nil {
+			log.Printf("  [!] DB Insert failed: %v", err)
+		} else {
+			log.Printf("  [✓] Success: Vector stored for track %d", t.ID)
+		}
 	}
 
 	log.Println("Batch analysis complete.")
-}
-
-// sampleStream uses ffmpeg to capture N seconds of a stream and save as WAV
-func sampleStream(url, outPath string, seconds int) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds+10)*time.Second)
-	defer cancel()
-
-	// ffmpeg -i [url] -t [seconds] -acodec pcm_s16le -ar 44100 -ac 1 [outPath]
-	cmd := exec.CommandContext(ctx, "ffmpeg",
-		"-y", // Overwrite
-		"-i", url,
-		"-t", fmt.Sprintf("%d", seconds),
-		"-acodec", "pcm_s16le",
-		"-ar", "44100",
-		"-ac", "1",
-		outPath,
-	)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("ffmpeg error: %w (output: %s)", err, string(output))
-	}
-
-	return nil
 }

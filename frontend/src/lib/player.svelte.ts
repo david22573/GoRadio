@@ -109,7 +109,7 @@ class AudioPlayer {
 	}
 
 	async startContinuous(seedTrack: any) {
-		await sessionManager.createSession(seedTrack.id);
+		await sessionManager.createSession(seedTrack);
 		await queueManager.fetchQueue();
 		this.playTrack(seedTrack);
 	}
@@ -222,11 +222,14 @@ class AudioPlayer {
 		const body: any = {
 			session_id: sessionId,
 			track_id: this.currentTrack.id,
-			completion: completion
 		};
 
 		if (type === 'play') {
+			body.completion = completion;
 			body.started_at = new Date().toISOString();
+		} else {
+			// Backend skip handler reads played_for (seconds), not completion.
+			body.played_for = Math.floor(this.audio?.currentTime ?? 0);
 		}
 
 		try {
